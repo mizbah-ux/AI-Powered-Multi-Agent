@@ -4,807 +4,476 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Multi-Agent System</title>
-  <link href="https://fonts.googleapis.com/css2?family=Space+Mono:ital,wght@0,400;0,700;1,400&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;700;800&display=swap" rel="stylesheet" />
   <style>
     :root {
-      --bg: #0a0a0f;
-      --surface: #111118;
-      --surface2: #1a1a24;
-      --border: #2a2a3a;
-      --accent: #7c3aed;
-      --accent2: #06b6d4;
-      --accent3: #10b981;
-      --warn: #f59e0b;
-      --danger: #ef4444;
-      --text: #e2e8f0;
-      --muted: #64748b;
-      --planner: #7c3aed;
-      --supervisor: #06b6d4;
-      --executor: #f59e0b;
-      --analyst: #10b981;
+      --bg:#0a0a0f; --surface:#111118; --surface2:#1a1a24; --border:#2a2a3a;
+      --accent:#7c3aed; --accent2:#06b6d4; --accent3:#10b981;
+      --warn:#f59e0b; --danger:#ef4444; --text:#e2e8f0; --muted:#64748b;
     }
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{background:var(--bg);color:var(--text);font-family:'Syne',sans-serif;min-height:100vh}
+    body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(rgba(124,58,237,.03) 1px,transparent 1px),linear-gradient(90deg,rgba(124,58,237,.03) 1px,transparent 1px);background-size:40px 40px;pointer-events:none;z-index:0}
+    .orb{position:fixed;border-radius:50%;filter:blur(80px);pointer-events:none;z-index:0}
+    .orb-1{width:400px;height:400px;background:rgba(124,58,237,.08);top:-100px;left:-100px}
+    .orb-2{width:300px;height:300px;background:rgba(6,182,212,.06);bottom:100px;right:-50px}
+    .wrapper{position:relative;z-index:1;max-width:1100px;margin:0 auto;padding:0 24px 60px}
+    header{padding:36px 0 32px;display:flex;align-items:flex-end;justify-content:space-between;border-bottom:1px solid var(--border);margin-bottom:40px}
+    .logo h1{font-size:2rem;font-weight:800;letter-spacing:-.02em}
+    .logo h1 span{color:var(--accent)}
+    .logo p{font-family:'Space Mono',monospace;font-size:.7rem;color:var(--muted);margin-top:6px;letter-spacing:.08em}
+    .pill{font-family:'Space Mono',monospace;font-size:.68rem;padding:6px 14px;border-radius:100px;border:1px solid var(--border);color:var(--muted);display:flex;align-items:center;gap:8px}
+    .dot{width:7px;height:7px;border-radius:50%;background:var(--accent3);animation:pulse 2s infinite}
+    @keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+    .grid{display:grid;grid-template-columns:1fr 1fr;gap:24px}
+    .card{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:24px;position:relative;overflow:hidden}
+    .card::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,rgba(124,58,237,.4),transparent)}
+    .label{font-family:'Space Mono',monospace;font-size:.65rem;letter-spacing:.12em;color:var(--muted);text-transform:uppercase;margin-bottom:16px}
+    .full{grid-column:1/-1}
+    textarea{width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:10px;color:var(--text);font-family:'Syne',sans-serif;font-size:1rem;padding:14px 16px;resize:vertical;min-height:90px;outline:none;transition:border-color .2s}
+    textarea:focus{border-color:var(--accent)}
+    textarea::placeholder{color:var(--muted)}
+    .row{display:flex;align-items:center;justify-content:space-between;margin-top:14px;gap:12px}
+    .hint{font-family:'Space Mono',monospace;font-size:.65rem;color:var(--muted)}
+    button{cursor:pointer;font-family:'Syne',sans-serif;font-weight:700;border:none;border-radius:10px;transition:all .2s}
+    .btn{background:var(--accent);color:#fff;padding:12px 28px;font-size:.9rem}
+    .btn:hover{background:#6d28d9;transform:translateY(-1px)}
+    .btn:disabled{opacity:.5;cursor:not-allowed;transform:none}
+    .btn-sm{background:transparent;border:1px solid var(--border);color:var(--muted);padding:8px 16px;font-size:.8rem}
+    .btn-sm:hover{border-color:var(--accent);color:var(--accent)}
+    .chips{display:flex;gap:8px;margin-bottom:20px}
+    .chip{flex:1;border-radius:10px;padding:10px 8px;text-align:center;border:1px solid transparent;opacity:.35;transition:all .35s}
+    .chip .icon{font-size:1.2rem;margin-bottom:4px}
+    .chip .name{font-size:.65rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase}
+    .chip[data-a="Planner"]   {--c:#7c3aed}
+    .chip[data-a="Supervisor"]{--c:#06b6d4}
+    .chip[data-a="Executor"]  {--c:#f59e0b}
+    .chip[data-a="Analyst"]   {--c:#10b981}
+    .chip.on{background:color-mix(in srgb,var(--c) 15%,transparent);border-color:var(--c);opacity:1;box-shadow:0 0 16px color-mix(in srgb,var(--c) 20%,transparent)}
+    .chip.on .name{color:var(--c)}
+    .logbox{background:var(--surface2);border:1px solid var(--border);border-radius:10px;height:260px;overflow-y:auto;padding:12px;font-family:'Space Mono',monospace;font-size:.72rem}
+    .logbox::-webkit-scrollbar{width:4px}
+    .logbox::-webkit-scrollbar-thumb{background:var(--border);border-radius:4px}
+    .logrow{display:grid;grid-template-columns:auto 1fr;gap:0 10px;padding:5px 0;border-bottom:1px solid rgba(255,255,255,.03);animation:fs .3s ease}
+    @keyframes fs{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:translateY(0)}}
+    .tag{font-size:.65rem;font-weight:700;padding:2px 8px;border-radius:4px;align-self:start;white-space:nowrap}
+    .tag.Planner   {background:rgba(124,58,237,.2);color:#7c3aed}
+    .tag.Supervisor{background:rgba(6,182,212,.2);color:#06b6d4}
+    .tag.Executor  {background:rgba(245,158,11,.2);color:#f59e0b}
+    .tag.Analyst   {background:rgba(16,185,129,.2);color:#10b981}
+    .tag.SYS,.tag.System{background:rgba(100,116,139,.2);color:#94a3b8}
+    .lmsg{color:var(--text);line-height:1.5;word-break:break-word}
+    .ltime{color:var(--muted);font-size:.6rem;grid-column:2;margin-top:1px}
+    .empty{height:100%;display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:.7rem;letter-spacing:.06em}
 
-    * { box-sizing: border-box; margin: 0; padding: 0; }
+    /* ── Result panel ───────────────────────── */
+    #result-placeholder{color:var(--muted);font-family:'Space Mono',monospace;font-size:.72rem;padding:50px 0;text-align:center}
+    #result-section{display:none}
+    .rbox{background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:16px;font-size:.85rem;line-height:1.7;white-space:pre-wrap;word-break:break-word;max-height:260px;overflow-y:auto}
+    .apill{display:none;margin-top:12px;padding:8px 14px;border-radius:8px;font-family:'Space Mono',monospace;font-size:.75rem;background:rgba(16,185,129,.12);border:1px solid rgba(16,185,129,.25);color:#10b981}
 
-    body {
-      background: var(--bg);
-      color: var(--text);
-      font-family: 'Syne', sans-serif;
-      min-height: 100vh;
-      overflow-x: hidden;
-    }
+    /* ── Debug log ───────────────────────────── */
+    #dbg-wrap{display:none;margin-top:14px}
+    #dbg-label{font-family:'Space Mono',monospace;font-size:.6rem;color:var(--muted);letter-spacing:.08em;margin-bottom:4px}
+    #dbg-box{background:#080810;border:1px solid var(--border);border-radius:8px;padding:10px;font-family:'Space Mono',monospace;font-size:.62rem;color:#64748b;max-height:160px;overflow-y:auto}
+    .dl{padding:2px 0;border-bottom:1px solid rgba(255,255,255,.04);word-break:break-all}
+    .dl.ok{color:#10b981}.dl.err{color:#ef4444}.dl.info{color:#06b6d4}
 
-    /* Background grid */
-    body::before {
-      content: '';
-      position: fixed;
-      inset: 0;
-      background-image:
-        linear-gradient(rgba(124,58,237,0.03) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(124,58,237,0.03) 1px, transparent 1px);
-      background-size: 40px 40px;
-      pointer-events: none;
-      z-index: 0;
-    }
+    /* ── Progress ────────────────────────────── */
+    .pbar{margin-top:10px;height:3px;background:var(--border);border-radius:2px;overflow:hidden}
+    .pfill{height:100%;border-radius:2px;background:linear-gradient(90deg,var(--accent),var(--accent2));width:0%;transition:width .5s ease}
 
-    /* Glow orbs */
-    .orb {
-      position: fixed;
-      border-radius: 50%;
-      filter: blur(80px);
-      pointer-events: none;
-      z-index: 0;
-    }
-    .orb-1 { width: 400px; height: 400px; background: rgba(124,58,237,0.08); top: -100px; left: -100px; }
-    .orb-2 { width: 300px; height: 300px; background: rgba(6,182,212,0.06); bottom: 100px; right: -50px; }
+    /* ── History ─────────────────────────────── */
+    .hlist{display:flex;flex-direction:column;gap:8px;max-height:260px;overflow-y:auto}
+    .hlist::-webkit-scrollbar{width:4px}
+    .hlist::-webkit-scrollbar-thumb{background:var(--border);border-radius:4px}
+    .hitem{background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:12px 16px;display:flex;align-items:center;gap:12px;cursor:pointer;transition:border-color .2s}
+    .hitem:hover{border-color:var(--accent)}
+    .hid{font-family:'Space Mono',monospace;font-size:.65rem;color:var(--muted);min-width:30px}
+    .hinput{flex:1;font-size:.85rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .hst{font-family:'Space Mono',monospace;font-size:.65rem;padding:3px 10px;border-radius:100px}
+    .hst.completed{background:rgba(16,185,129,.15);color:#10b981}
+    .hst.running{background:rgba(245,158,11,.15);color:#f59e0b}
+    .hst.failed{background:rgba(239,68,68,.15);color:#ef4444}
+    .hst.pending,.hst.started{background:rgba(100,116,139,.15);color:#64748b}
+    .hdate{font-family:'Space Mono',monospace;font-size:.6rem;color:var(--muted)}
 
-    /* Layout */
-    .wrapper {
-      position: relative;
-      z-index: 1;
-      max-width: 1100px;
-      margin: 0 auto;
-      padding: 0 24px 60px;
-    }
+    .spinner{display:inline-block;width:14px;height:14px;border:2px solid rgba(255,255,255,.2);border-top-color:#fff;border-radius:50%;animation:spin .7s linear infinite;vertical-align:middle;margin-right:6px}
+    @keyframes spin{to{transform:rotate(360deg)}}
 
-    /* Header */
-    header {
-      padding: 36px 0 32px;
-      display: flex;
-      align-items: flex-end;
-      justify-content: space-between;
-      border-bottom: 1px solid var(--border);
-      margin-bottom: 40px;
-    }
-
-    .logo-area h1 {
-      font-size: 2rem;
-      font-weight: 800;
-      letter-spacing: -0.02em;
-      line-height: 1;
-    }
-    .logo-area h1 span { color: var(--accent); }
-    .logo-area p {
-      font-family: 'Space Mono', monospace;
-      font-size: 0.7rem;
-      color: var(--muted);
-      margin-top: 6px;
-      letter-spacing: 0.08em;
-    }
-
-    .status-pill {
-      font-family: 'Space Mono', monospace;
-      font-size: 0.68rem;
-      padding: 6px 14px;
-      border-radius: 100px;
-      border: 1px solid var(--border);
-      color: var(--muted);
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-    .status-pill .dot {
-      width: 7px; height: 7px;
-      border-radius: 50%;
-      background: var(--accent3);
-      animation: pulse 2s infinite;
-    }
-    @keyframes pulse {
-      0%, 100% { opacity: 1; }
-      50% { opacity: 0.3; }
-    }
-
-    /* Main grid */
-    .main-grid {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 24px;
-    }
-
-    /* Cards */
-    .card {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 16px;
-      padding: 24px;
-      position: relative;
-      overflow: hidden;
-    }
-    .card::before {
-      content: '';
-      position: absolute;
-      top: 0; left: 0; right: 0;
-      height: 1px;
-      background: linear-gradient(90deg, transparent, rgba(124,58,237,0.4), transparent);
-    }
-
-    .card-label {
-      font-family: 'Space Mono', monospace;
-      font-size: 0.65rem;
-      letter-spacing: 0.12em;
-      color: var(--muted);
-      text-transform: uppercase;
-      margin-bottom: 16px;
-    }
-
-    /* Submit area — spans full width */
-    .submit-card {
-      grid-column: 1 / -1;
-    }
-
-    textarea {
-      width: 100%;
-      background: var(--surface2);
-      border: 1px solid var(--border);
-      border-radius: 10px;
-      color: var(--text);
-      font-family: 'Syne', sans-serif;
-      font-size: 1rem;
-      padding: 14px 16px;
-      resize: vertical;
-      min-height: 90px;
-      transition: border-color 0.2s;
-      outline: none;
-    }
-    textarea:focus { border-color: var(--accent); }
-    textarea::placeholder { color: var(--muted); }
-
-    .submit-row {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      margin-top: 14px;
-      gap: 12px;
-    }
-
-    .hint {
-      font-family: 'Space Mono', monospace;
-      font-size: 0.65rem;
-      color: var(--muted);
-    }
-
-    button {
-      cursor: pointer;
-      font-family: 'Syne', sans-serif;
-      font-weight: 700;
-      border: none;
-      border-radius: 10px;
-      transition: all 0.2s;
-    }
-
-    .btn-primary {
-      background: var(--accent);
-      color: #fff;
-      padding: 12px 28px;
-      font-size: 0.9rem;
-      letter-spacing: 0.02em;
-      position: relative;
-      overflow: hidden;
-    }
-    .btn-primary::after {
-      content: '';
-      position: absolute;
-      inset: 0;
-      background: linear-gradient(135deg, rgba(255,255,255,0.1), transparent);
-    }
-    .btn-primary:hover { background: #6d28d9; transform: translateY(-1px); }
-    .btn-primary:active { transform: translateY(0); }
-    .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
-
-    .btn-ghost {
-      background: transparent;
-      border: 1px solid var(--border);
-      color: var(--muted);
-      padding: 8px 16px;
-      font-size: 0.8rem;
-    }
-    .btn-ghost:hover { border-color: var(--accent); color: var(--accent); }
-
-    /* Agent pipeline visualization */
-    .agents-row {
-      display: flex;
-      gap: 8px;
-      margin-bottom: 20px;
-    }
-
-    .agent-chip {
-      flex: 1;
-      border-radius: 10px;
-      padding: 10px 8px;
-      text-align: center;
-      border: 1px solid transparent;
-      transition: all 0.3s;
-      opacity: 0.4;
-    }
-    .agent-chip .chip-icon { font-size: 1.2rem; margin-bottom: 4px; }
-    .agent-chip .chip-name {
-      font-size: 0.65rem;
-      font-weight: 700;
-      letter-spacing: 0.06em;
-      text-transform: uppercase;
-    }
-
-    .agent-chip[data-agent="Planner"]    { --c: var(--planner); }
-    .agent-chip[data-agent="Supervisor"] { --c: var(--supervisor); }
-    .agent-chip[data-agent="Executor"]   { --c: var(--executor); }
-    .agent-chip[data-agent="Analyst"]    { --c: var(--analyst); }
-
-    .agent-chip.active {
-      background: color-mix(in srgb, var(--c) 15%, transparent);
-      border-color: var(--c);
-      opacity: 1;
-      box-shadow: 0 0 16px color-mix(in srgb, var(--c) 20%, transparent);
-    }
-    .agent-chip.active .chip-name { color: var(--c); }
-    .agent-chip.done { opacity: 0.6; }
-    .agent-chip.done .chip-name { color: var(--c); }
-
-    /* Logs */
-    .logs-box {
-      background: var(--surface2);
-      border: 1px solid var(--border);
-      border-radius: 10px;
-      height: 260px;
-      overflow-y: auto;
-      padding: 12px;
-      font-family: 'Space Mono', monospace;
-      font-size: 0.72rem;
-    }
-    .logs-box::-webkit-scrollbar { width: 4px; }
-    .logs-box::-webkit-scrollbar-track { background: transparent; }
-    .logs-box::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
-
-    .log-entry {
-      display: grid;
-      grid-template-columns: auto 1fr;
-      gap: 0 10px;
-      padding: 5px 0;
-      border-bottom: 1px solid rgba(255,255,255,0.03);
-      animation: fadeSlide 0.3s ease;
-    }
-    @keyframes fadeSlide {
-      from { opacity: 0; transform: translateY(4px); }
-      to   { opacity: 1; transform: translateY(0); }
-    }
-
-    .log-agent {
-      font-size: 0.65rem;
-      font-weight: 700;
-      letter-spacing: 0.04em;
-      padding: 2px 8px;
-      border-radius: 4px;
-      align-self: start;
-      white-space: nowrap;
-    }
-    .log-agent.Planner    { background: color-mix(in srgb, var(--planner) 20%, transparent);    color: var(--planner); }
-    .log-agent.Supervisor { background: color-mix(in srgb, var(--supervisor) 20%, transparent); color: var(--supervisor); }
-    .log-agent.Executor   { background: color-mix(in srgb, var(--executor) 20%, transparent);   color: var(--executor); }
-    .log-agent.Analyst    { background: color-mix(in srgb, var(--analyst) 20%, transparent);    color: var(--analyst); }
-
-    .log-msg { color: var(--text); line-height: 1.5; word-break: break-word; }
-    .log-time { color: var(--muted); font-size: 0.6rem; grid-column: 2; margin-top: 1px; }
-
-    .logs-empty {
-      height: 100%;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      color: var(--muted);
-      font-size: 0.7rem;
-      letter-spacing: 0.06em;
-    }
-
-    /* Result card */
-    .result-section { margin-top: 20px; display: none; }
-    .result-section.visible { display: block; }
-
-    .result-box {
-      background: var(--surface2);
-      border: 1px solid var(--border);
-      border-radius: 10px;
-      padding: 16px;
-      font-size: 0.85rem;
-      line-height: 1.7;
-      white-space: pre-wrap;
-      word-break: break-word;
-      max-height: 220px;
-      overflow-y: auto;
-    }
-
-    .analysis-pill {
-      display: inline-flex;
-      align-items: center;
-      gap: 8px;
-      background: color-mix(in srgb, var(--accent3) 15%, transparent);
-      border: 1px solid color-mix(in srgb, var(--accent3) 30%, transparent);
-      color: var(--accent3);
-      border-radius: 8px;
-      padding: 8px 14px;
-      font-family: 'Space Mono', monospace;
-      font-size: 0.75rem;
-      margin-top: 12px;
-    }
-
-    /* Task history */
-    .history-card { grid-column: 1 / -1; }
-
-    .history-list {
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-      max-height: 260px;
-      overflow-y: auto;
-    }
-    .history-list::-webkit-scrollbar { width: 4px; }
-    .history-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
-
-    .history-item {
-      background: var(--surface2);
-      border: 1px solid var(--border);
-      border-radius: 10px;
-      padding: 12px 16px;
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      cursor: pointer;
-      transition: border-color 0.2s;
-    }
-    .history-item:hover { border-color: var(--accent); }
-
-    .hi-id {
-      font-family: 'Space Mono', monospace;
-      font-size: 0.65rem;
-      color: var(--muted);
-      min-width: 30px;
-    }
-    .hi-input {
-      flex: 1;
-      font-size: 0.85rem;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      color: var(--text);
-    }
-    .hi-status {
-      font-family: 'Space Mono', monospace;
-      font-size: 0.65rem;
-      padding: 3px 10px;
-      border-radius: 100px;
-    }
-    .hi-status.completed { background: color-mix(in srgb, var(--accent3) 15%, transparent); color: var(--accent3); }
-    .hi-status.running   { background: color-mix(in srgb, var(--warn) 15%, transparent);    color: var(--warn); }
-    .hi-status.failed    { background: color-mix(in srgb, var(--danger) 15%, transparent);  color: var(--danger); }
-    .hi-status.pending   { background: color-mix(in srgb, var(--muted) 15%, transparent);   color: var(--muted); }
-
-    .hi-date {
-      font-family: 'Space Mono', monospace;
-      font-size: 0.6rem;
-      color: var(--muted);
-    }
-
-    .history-empty {
-      text-align: center;
-      padding: 30px;
-      color: var(--muted);
-      font-family: 'Space Mono', monospace;
-      font-size: 0.7rem;
-    }
-
-    /* Loading spinner */
-    .spinner {
-      display: inline-block;
-      width: 14px; height: 14px;
-      border: 2px solid rgba(255,255,255,0.2);
-      border-top-color: #fff;
-      border-radius: 50%;
-      animation: spin 0.7s linear infinite;
-      vertical-align: middle;
-      margin-right: 6px;
-    }
-    @keyframes spin { to { transform: rotate(360deg); } }
-
-    /* Status bar */
-    .status-bar {
-      margin-top: 10px;
-      height: 3px;
-      background: var(--border);
-      border-radius: 2px;
-      overflow: hidden;
-    }
-    .status-bar-fill {
-      height: 100%;
-      border-radius: 2px;
-      background: linear-gradient(90deg, var(--accent), var(--accent2));
-      width: 0%;
-      transition: width 0.4s ease;
-    }
-
-    /* Responsive */
-    @media (max-width: 700px) {
-      .main-grid { grid-template-columns: 1fr; }
-      .history-card { grid-column: 1; }
-      header { flex-direction: column; align-items: flex-start; gap: 12px; }
-    }
+    @media(max-width:700px){.grid{grid-template-columns:1fr}.full{grid-column:1}header{flex-direction:column;align-items:flex-start;gap:12px}}
   </style>
 </head>
 <body>
-  <div class="orb orb-1"></div>
-  <div class="orb orb-2"></div>
-
-  <div class="wrapper">
-    <header>
-      <div class="logo-area">
-        <h1>Multi<span>Agent</span> System</h1>
-        <p>BCA Final Year Project &mdash; 4-Agent Pipeline &mdash; FastAPI + Groq LLM</p>
-      </div>
-      <div class="status-pill">
-        <span class="dot"></span>
-        <span id="api-status">CONNECTING...</span>
-      </div>
-    </header>
-
-    <div class="main-grid">
-
-      <!-- Submit Task -->
-      <div class="card submit-card">
-        <div class="card-label">// Submit Task</div>
-        <textarea id="task-input" placeholder="Describe what you want the agent system to do...&#10;e.g. &quot;Research and summarize the key benefits of microservices architecture&quot;" rows="3"></textarea>
-        <div class="submit-row">
-          <span class="hint" id="char-count">0 / 500 chars</span>
-          <button class="btn-primary" id="submit-btn" onclick="submitTask()">
-            Run Pipeline →
-          </button>
-        </div>
-        <div class="status-bar"><div class="status-bar-fill" id="progress-bar"></div></div>
-      </div>
-
-      <!-- Agent Pipeline -->
-      <div class="card">
-        <div class="card-label">// Agent Pipeline</div>
-        <div class="agents-row">
-          <div class="agent-chip" data-agent="Planner" id="chip-Planner">
-            <div class="chip-icon">🧠</div>
-            <div class="chip-name">Planner</div>
-          </div>
-          <div class="agent-chip" data-agent="Supervisor" id="chip-Supervisor">
-            <div class="chip-icon">👁️</div>
-            <div class="chip-name">Supervisor</div>
-          </div>
-          <div class="agent-chip" data-agent="Executor" id="chip-Executor">
-            <div class="chip-icon">⚡</div>
-            <div class="chip-name">Executor</div>
-          </div>
-          <div class="agent-chip" data-agent="Analyst" id="chip-Analyst">
-            <div class="chip-icon">📊</div>
-            <div class="chip-name">Analyst</div>
-          </div>
-        </div>
-
-        <div class="card-label">// Live Logs</div>
-        <div class="logs-box" id="logs-box">
-          <div class="logs-empty">Submit a task to see live agent activity</div>
-        </div>
-      </div>
-
-      <!-- Result -->
-      <div class="card">
-        <div class="card-label">// Execution Result</div>
-        <div id="result-placeholder" style="color:var(--muted);font-family:'Space Mono',monospace;font-size:0.72rem;padding:40px 0;text-align:center;">
-          Results will appear after pipeline completes
-        </div>
-        <div class="result-section" id="result-section">
-          <div class="result-box" id="result-box"></div>
-          <div class="analysis-pill" id="analysis-pill"></div>
-        </div>
-      </div>
-
-      <!-- Task History -->
-      <div class="card history-card">
-        <div class="card-label" style="display:flex;align-items:center;justify-content:space-between;">
-          <span>// Task History</span>
-          <button class="btn-ghost" onclick="loadHistory()">↺ Refresh</button>
-        </div>
-        <div class="history-list" id="history-list">
-          <div class="history-empty">No tasks yet</div>
-        </div>
-      </div>
-
+<div class="orb orb-1"></div><div class="orb orb-2"></div>
+<div class="wrapper">
+  <header>
+    <div class="logo">
+      <h1>Multi<span>Agent</span> System</h1>
+      <p>BCA Final Year Project &mdash; 4-Agent Pipeline &mdash; FastAPI + Groq LLM</p>
     </div>
+    <div class="pill"><span class="dot"></span><span id="api-status">CONNECTING...</span></div>
+  </header>
+
+  <div class="grid">
+
+    <!-- Submit -->
+    <div class="card full">
+      <div class="label">// Submit Task</div>
+      <textarea id="task-input" rows="3" placeholder="Describe what you want the agent system to do...&#10;e.g. &quot;Analyze sales data and generate a weekly report&quot;"></textarea>
+      <div class="row">
+        <span class="hint" id="char-count">0 / 500 chars</span>
+        <button class="btn" id="submit-btn" onclick="submitTask()">Run Pipeline →</button>
+      </div>
+      <div class="pbar"><div class="pfill" id="pbar"></div></div>
+    </div>
+
+    <!-- Pipeline + Logs -->
+    <div class="card">
+      <div class="label">// Agent Pipeline</div>
+      <div class="chips">
+        <div class="chip" data-a="Planner"    id="chip-Planner">   <div class="icon">🧠</div><div class="name">Planner</div></div>
+        <div class="chip" data-a="Supervisor" id="chip-Supervisor"><div class="icon">👁️</div><div class="name">Supervisor</div></div>
+        <div class="chip" data-a="Executor"   id="chip-Executor">  <div class="icon">⚡</div><div class="name">Executor</div></div>
+        <div class="chip" data-a="Analyst"    id="chip-Analyst">   <div class="icon">📊</div><div class="name">Analyst</div></div>
+      </div>
+      <div class="label">// Live Logs</div>
+      <div class="logbox" id="logbox"><div class="empty">Submit a task to see live agent activity</div></div>
+    </div>
+
+    <!-- Result -->
+    <div class="card">
+      <div class="label">// Execution Result</div>
+      <div id="result-placeholder">Results will appear after pipeline completes</div>
+      <div id="result-section">
+        <div class="rbox" id="rbox"></div>
+        <div class="apill" id="apill"></div>
+      </div>
+      <div id="dbg-wrap">
+        <div id="dbg-label">// DEBUG LOG</div>
+        <div id="dbg-box"></div>
+      </div>
+    </div>
+
+    <!-- History -->
+    <div class="card full">
+      <div class="label" style="display:flex;align-items:center;justify-content:space-between">
+        <span>// Task History</span>
+        <button class="btn-sm" onclick="loadHistory()">↺ Refresh</button>
+      </div>
+      <div class="hlist" id="hlist"><div class="empty" style="padding:24px">No tasks yet</div></div>
+    </div>
+
   </div>
+</div>
 
-  <script>
-    const API = 'http://localhost:8000';
-    let polling = null;
-    let currentTaskId = null;
+<script>
+const API = 'http://localhost:8000';
+let seenLogs = new Set();
+let activeChips = new Set();
+let pollTimer = null;
 
-    // ── Char counter ──────────────────────────────────────────────
-    const input = document.getElementById('task-input');
-    input.addEventListener('input', () => {
-      const len = input.value.length;
-      document.getElementById('char-count').textContent = `${len} / 500 chars`;
-      if (len > 500) input.value = input.value.slice(0, 500);
+// ── char counter ──────────────────────────────────────────────
+const taskInput = document.getElementById('task-input');
+taskInput.addEventListener('input', () => {
+  const n = Math.min(taskInput.value.length, 500);
+  document.getElementById('char-count').textContent = n + ' / 500 chars';
+  if (taskInput.value.length > 500) taskInput.value = taskInput.value.slice(0, 500);
+});
+
+// ── debug ─────────────────────────────────────────────────────
+function dbg(msg, cls) {
+  document.getElementById('dbg-wrap').style.display = 'block';
+  const b = document.getElementById('dbg-box');
+  const d = document.createElement('div');
+  d.className = 'dl' + (cls ? ' ' + cls : '');
+  d.textContent = new Date().toLocaleTimeString() + '  ' + msg;
+  b.appendChild(d);
+  b.scrollTop = b.scrollHeight;
+}
+
+// ── health ────────────────────────────────────────────────────
+async function checkHealth() {
+  try {
+    const r = await fetch(API + '/');
+    document.getElementById('api-status').textContent = r.ok ? 'API ONLINE' : 'API ERROR';
+    if (!r.ok) document.querySelector('.dot').style.background = 'var(--danger)';
+  } catch {
+    document.getElementById('api-status').textContent = 'API OFFLINE';
+    document.querySelector('.dot').style.background = 'var(--danger)';
+  }
+}
+
+// ── SUBMIT ────────────────────────────────────────────────────
+async function submitTask() {
+  const text = taskInput.value.trim();
+  if (!text) { taskInput.focus(); return; }
+
+  resetUI();
+  const btn = document.getElementById('submit-btn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span>Running...';
+
+  // Progress ticker
+  let prog = 0;
+  const ticker = setInterval(() => {
+    prog = Math.min(prog + 0.8, 88);
+    document.getElementById('pbar').style.width = prog + '%';
+  }, 500);
+
+  try {
+    // ── Step 1: Start the pipeline (returns immediately with task_id) ──
+    dbg('POST /task  →  starting pipeline...', 'info');
+    const res = await fetch(API + '/task', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({user_input: text})
     });
 
-    // ── API health ────────────────────────────────────────────────
-    async function checkHealth() {
-      try {
-        const res = await fetch(`${API}/`);
-        if (res.ok) {
-          document.getElementById('api-status').textContent = 'API ONLINE';
-        } else throw new Error();
-      } catch {
-        document.getElementById('api-status').textContent = 'API OFFLINE';
-        document.querySelector('.status-pill .dot').style.background = 'var(--danger)';
-      }
-    }
+    if (!res.ok) throw new Error('HTTP ' + res.status + ' ' + res.statusText);
+    const startData = await res.json();
+    const taskId = startData.task_id;
 
-    // ── Submit Task ───────────────────────────────────────────────
-    async function submitTask() {
-      const text = input.value.trim();
-      if (!text) { input.focus(); return; }
+    dbg('Task created: id=' + taskId + '  status=' + startData.status, 'ok');
 
-      const btn = document.getElementById('submit-btn');
-      btn.disabled = true;
-      btn.innerHTML = '<span class="spinner"></span>Running...';
+    // ── Step 2: Poll logs + status until completed ──────────────────
+    await pollUntilDone(taskId);
 
-      resetUI();
-
-      // Start a fake progress ticker so the bar moves while we wait
-      let fakeProgress = 0;
-      const ticker = setInterval(() => {
-        fakeProgress = Math.min(fakeProgress + 2, 85);
-        setProgress(fakeProgress);
-      }, 400);
-
-      // Poll logs every second while the request is in-flight
-      let logPoll = setInterval(async () => {
-        if (!currentTaskId) return;
-        try {
-          const r = await fetch(`${API}/task/${currentTaskId}/logs`);
-          const d = await r.json();
-          renderLogs(d.logs || []);
-        } catch {}
-      }, 800);
-
-      try {
-        // Fire the task — this blocks until the full pipeline finishes
-        const res = await fetch(`${API}/task`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ user_input: text })
-        });
-
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const data = await res.json();
-        currentTaskId = data.task_id;
-
-        // Final log flush after we have the task_id
-        clearInterval(logPoll);
-        try {
-          const r = await fetch(`${API}/task/${data.task_id}/logs`);
-          const d = await r.json();
-          renderLogs(d.logs || []);
-        } catch {}
-
-        setProgress(100);
-
-        if (data.status === 'completed') {
-          showResult(data);
-        } else {
-          const reason = data.reason || data.error || 'Unknown error';
-          appendLog({ agent: 'System', message: `Pipeline failed: ${reason}` });
-          showError(reason);
-        }
-
-        loadHistory();
-      } catch (err) {
-        clearInterval(logPoll);
-        appendLog({ agent: 'System', message: `Connection error: Could not reach API at ${API}. Make sure FastAPI is running (uvicorn main:app --reload).` });
-      } finally {
-        clearInterval(ticker);
-        clearInterval(logPoll);
-        btn.disabled = false;
-        btn.innerHTML = 'Run Pipeline →';
-      }
-    }
-
-    // ── Log state ─────────────────────────────────────────────────
-    let seenLogs = new Set();
-
-    function stopPolling() {
-      if (polling) { clearInterval(polling); polling = null; }
-    }
-
-    function renderLogs(logs) {
-      const box = document.getElementById('logs-box');
-      let hasNew = false;
-
-      logs.forEach(log => {
-        const key = `${log.agent}:${log.message}:${log.time}`;
-        if (seenLogs.has(key)) return;
-        seenLogs.add(key);
-        hasNew = true;
-
-        // Clear placeholder
-        const empty = box.querySelector('.logs-empty');
-        if (empty) empty.remove();
-
-        const entry = document.createElement('div');
-        entry.className = 'log-entry';
-
-        const agentTag = document.createElement('span');
-        agentTag.className = `log-agent ${log.agent}`;
-        agentTag.textContent = log.agent.toUpperCase();
-
-        const msgWrap = document.createElement('div');
-        const msg = document.createElement('div');
-        msg.className = 'log-msg';
-        msg.textContent = log.message;
-        const time = document.createElement('div');
-        time.className = 'log-time';
-        time.textContent = formatTime(log.time);
-        msgWrap.appendChild(msg);
-        msgWrap.appendChild(time);
-
-        entry.appendChild(agentTag);
-        entry.appendChild(msgWrap);
-        box.appendChild(entry);
-
-        // Activate agent chip
-        activateChip(log.agent);
-      });
-
-      if (hasNew) box.scrollTop = box.scrollHeight;
-    }
-
-    // ── Agent chips ───────────────────────────────────────────────
-    const agentOrder = ['Planner', 'Supervisor', 'Executor', 'Analyst'];
-    let activeAgents = new Set();
-
-    function activateChip(agentName) {
-      if (activeAgents.has(agentName)) return;
-      activeAgents.add(agentName);
-      const chip = document.getElementById(`chip-${agentName}`);
-      if (chip) chip.classList.add('active');
-    }
-
-    // ── Result ────────────────────────────────────────────────────
-    function showResult(data) {
-      document.getElementById('result-placeholder').style.display = 'none';
-      const section = document.getElementById('result-section');
-      section.classList.add('visible');
-
-      // Try multiple possible field names in case API shape varies
-      const resultText = data.result || data.output || data.execution_result || '';
-      const box = document.getElementById('result-box');
-      box.style.borderColor = '';
-      box.style.color = '';
-      box.textContent = resultText.trim() !== ''
-        ? resultText
-        : '(pipeline completed but returned no result text — check your /task endpoint)';
-
-      const analysisText = data.analysis || data.analyst_result || '';
-      const pill = document.getElementById('analysis-pill');
-      if (analysisText.trim() !== '') {
-        pill.textContent = '✦ Analyst: ' + analysisText;
-        pill.style.display = 'inline-flex';
-      } else {
-        pill.style.display = 'none';
-      }
-    }
-
-    function showError(msg) {
-      document.getElementById('result-placeholder').style.display = 'none';
-      const section = document.getElementById('result-section');
-      section.classList.add('visible');
-      const box = document.getElementById('result-box');
-      box.textContent = 'Pipeline failed: ' + msg;
-      box.style.borderColor = 'var(--danger)';
-      box.style.color = 'var(--danger)';
-      document.getElementById('analysis-pill').style.display = 'none';
-    }
-
-    // ── History ───────────────────────────────────────────────────
-    async function loadHistory() {
-      try {
-        const res = await fetch(`${API}/tasks`);
-        const data = await res.json();
-        renderHistory(data.tasks || []);
-      } catch {
-        document.getElementById('history-list').innerHTML = '<div class="history-empty">Could not load history</div>';
-      }
-    }
-
-    function renderHistory(tasks) {
-      const list = document.getElementById('history-list');
-      if (!tasks.length) {
-        list.innerHTML = '<div class="history-empty">No tasks yet</div>';
-        return;
-      }
-      list.innerHTML = tasks.map(t => `
-        <div class="history-item" onclick="loadTaskLogs(${t.id})">
-          <span class="hi-id">#${t.id}</span>
-          <span class="hi-input">${escHtml(t.input)}</span>
-          <span class="hi-status ${t.status}">${t.status}</span>
-          <span class="hi-date">${formatTime(t.created_at)}</span>
-        </div>
-      `).join('');
-    }
-
-    async function loadTaskLogs(taskId) {
-      resetUI();
-      currentTaskId = taskId;
-      try {
-        const res = await fetch(`${API}/task/${taskId}/logs`);
-        const data = await res.json();
-        renderLogs(data.logs);
-      } catch {}
-    }
-
-    // ── Helpers ───────────────────────────────────────────────────
-    function resetUI() {
-      stopPolling();
-      seenLogs.clear();
-      activeAgents.clear();
-      agentOrder.forEach(a => {
-        const c = document.getElementById(`chip-${a}`);
-        if (c) { c.classList.remove('active', 'done'); }
-      });
-      document.getElementById('logs-box').innerHTML = '<div class="logs-empty">Running pipeline...</div>';
-      document.getElementById('result-placeholder').style.display = '';
-      document.getElementById('result-section').classList.remove('visible');
-      setProgress(0);
-    }
-
-    function setProgress(pct) {
-      document.getElementById('progress-bar').style.width = pct + '%';
-    }
-
-    function appendLog(log) {
-      const box = document.getElementById('logs-box');
-      const empty = box.querySelector('.logs-empty');
-      if (empty) empty.remove();
-      const entry = document.createElement('div');
-      entry.className = 'log-entry';
-      entry.innerHTML = `<span class="log-agent" style="background:rgba(100,116,139,0.2);color:#94a3b8">SYS</span>
-        <div><div class="log-msg">${escHtml(log.message)}</div></div>`;
-      box.appendChild(entry);
-      box.scrollTop = box.scrollHeight;
-    }
-
-    function formatTime(ts) {
-      if (!ts) return '';
-      const d = new Date(ts);
-      return isNaN(d) ? ts : d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-    }
-
-    function escHtml(s) {
-      return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-    }
-
-    // ── Init ──────────────────────────────────────────────────────
-    checkHealth();
     loadHistory();
-  </script>
+
+  } catch (err) {
+    dbg('ERROR: ' + err.message, 'err');
+    sysLog('Error — ' + err.message);
+  } finally {
+    clearInterval(ticker);
+    document.getElementById('pbar').style.width = '100%';
+    btn.disabled = false;
+    btn.innerHTML = 'Run Pipeline →';
+  }
+}
+
+// ── POLL until done, then show result ────────────────────────
+async function pollUntilDone(taskId) {
+  return new Promise((resolve) => {
+    let attempts = 0;
+    const MAX = 120; // 120 × 1s = 2 min timeout
+    let lastStatus = '';
+
+    pollTimer = setInterval(async () => {
+      attempts++;
+
+      try {
+        // Fetch logs first
+        const lr = await fetch(API + '/task/' + taskId + '/logs');
+        const ld = await lr.json();
+        renderLogs(ld.logs || []);
+
+        // Then fetch status
+        const sr = await fetch(API + '/task/' + taskId + '/status');
+        const sd = await sr.json();
+        
+        dbg('poll #' + attempts + '  status=' + sd.status + '  last=' + lastStatus);
+
+        // Status changed to completed - fetch fresh result
+        if (sd.status === 'completed' && lastStatus !== 'completed') {
+          dbg('Status changed to completed, fetching fresh result...', 'info');
+          // Fetch fresh status to get the result
+          const freshSr = await fetch(API + '/task/' + taskId + '/status');
+          const freshSd = await freshSr.json();
+          clearInterval(pollTimer);
+          dbg('Pipeline completed ✓', 'ok');
+          dbg('Fresh result data: ' + JSON.stringify(freshSd, null, 2), 'info');
+          showResult(freshSd);
+          resolve();
+        }
+        else if (sd.status === 'failed') {
+          clearInterval(pollTimer);
+          dbg('Pipeline failed: ' + (sd.error || sd.reason || '?'), 'err');
+          showError(sd.error || sd.reason || 'Pipeline failed');
+          resolve();
+        }
+        else if (attempts >= MAX) {
+          clearInterval(pollTimer);
+          dbg('Timed out after ' + MAX + 's', 'err');
+          showError('Timed out waiting for pipeline to complete');
+          resolve();
+        }
+        
+        lastStatus = sd.status;
+
+      } catch (e) {
+        dbg('Poll error: ' + e.message, 'err');
+      }
+
+    }, 1000); // poll every 1 second
+  });
+}
+
+// ── SHOW RESULT ───────────────────────────────────────────────
+function showResult(data) {
+  dbg('showResult() called with data: ' + JSON.stringify(data, null, 2), 'info');
+
+  document.getElementById('result-placeholder').style.display = 'none';
+  const section = document.getElementById('result-section');
+  section.style.display = 'block';
+
+  // Try multiple possible result fields
+  const resultText = String(data.result || data.output || data.final_result || '').trim();
+  const box = document.getElementById('rbox');
+  box.style.color = '';
+  box.style.borderColor = '';
+
+  if (resultText && resultText !== 'undefined' && resultText !== 'null') {
+    box.textContent = resultText;
+    dbg('Result displayed successfully (' + resultText.length + ' chars)', 'ok');
+  } else {
+    box.textContent = 'Pipeline completed but no result was returned. Check the logs for details.';
+    box.style.color = 'var(--muted)';
+    dbg('Result was empty or invalid! Raw result field: ' + data.result, 'err');
+  }
+
+  // Handle analysis
+  const analysisText = String(data.analysis || data.final_analysis || '').trim();
+  const pill = document.getElementById('apill');
+  if (analysisText && analysisText !== 'undefined' && analysisText !== 'null') {
+    pill.textContent = '✦ Analyst: ' + analysisText;
+    pill.style.display = 'block';
+    dbg('Analysis displayed (' + analysisText.length + ' chars)', 'ok');
+  } else {
+    pill.style.display = 'none';
+    dbg('Analysis was empty or not provided', 'info');
+  }
+}
+
+function showError(msg) {
+  document.getElementById('result-placeholder').style.display = 'none';
+  const section = document.getElementById('result-section');
+  section.style.display = 'block';
+  const box = document.getElementById('rbox');
+  box.textContent = '✕ ' + msg;
+  box.style.color = 'var(--danger)';
+  box.style.borderColor = 'var(--danger)';
+  document.getElementById('apill').style.display = 'none';
+}
+
+// ── LOGS ──────────────────────────────────────────────────────
+function renderLogs(logs) {
+  const box = document.getElementById('logbox');
+  let added = false;
+  for (const log of logs) {
+    const key = log.agent + '|' + log.message + '|' + log.time;
+    if (seenLogs.has(key)) continue;
+    seenLogs.add(key);
+    added = true;
+    box.querySelector('.empty')?.remove();
+    const row = document.createElement('div');
+    row.className = 'logrow';
+    const tag = document.createElement('span');
+    tag.className = 'tag ' + log.agent;
+    tag.textContent = log.agent.toUpperCase();
+    const wrap = document.createElement('div');
+    const msg = document.createElement('div'); msg.className = 'lmsg'; msg.textContent = log.message;
+    const ts  = document.createElement('div'); ts.className  = 'ltime'; ts.textContent  = fmt(log.time);
+    wrap.appendChild(msg); wrap.appendChild(ts);
+    row.appendChild(tag); row.appendChild(wrap);
+    box.appendChild(row);
+    activateChip(log.agent);
+  }
+  if (added) box.scrollTop = box.scrollHeight;
+}
+
+function sysLog(msg) {
+  const box = document.getElementById('logbox');
+  box.querySelector('.empty')?.remove();
+  const row = document.createElement('div'); row.className = 'logrow';
+  const tag = document.createElement('span'); tag.className = 'tag SYS'; tag.textContent = 'SYS';
+  const wrap = document.createElement('div');
+  const msg2 = document.createElement('div'); msg2.className = 'lmsg'; msg2.textContent = msg;
+  wrap.appendChild(msg2); row.appendChild(tag); row.appendChild(wrap);
+  box.appendChild(row); box.scrollTop = box.scrollHeight;
+}
+
+// ── CHIPS ─────────────────────────────────────────────────────
+function activateChip(name) {
+  if (activeChips.has(name)) return;
+  activeChips.add(name);
+  document.getElementById('chip-' + name)?.classList.add('on');
+}
+
+// ── HISTORY ───────────────────────────────────────────────────
+async function loadHistory() {
+  try {
+    const r = await fetch(API + '/tasks');
+    const d = await r.json();
+    const list = document.getElementById('hlist');
+    const tasks = d.tasks || [];
+    if (!tasks.length) { list.innerHTML = '<div class="empty" style="padding:24px">No tasks yet</div>'; return; }
+    list.innerHTML = tasks.map(t => `
+      <div class="hitem" onclick="viewLogs(${t.id})">
+        <span class="hid">#${t.id}</span>
+        <span class="hinput">${esc(t.input)}</span>
+        <span class="hst ${t.status}">${t.status}</span>
+        <span class="hdate">${fmt(t.created_at)}</span>
+      </div>`).join('');
+  } catch {
+    document.getElementById('hlist').innerHTML = '<div class="empty" style="padding:24px">Could not load history</div>';
+  }
+}
+
+async function viewLogs(taskId) {
+  // Only clear logs and chips, not the results
+  if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+  seenLogs.clear();
+  activeChips.clear();
+  ['Planner','Supervisor','Executor','Analyst'].forEach(a =>
+    document.getElementById('chip-' + a)?.classList.remove('on'));
+  document.getElementById('logbox').innerHTML = '<div class="empty">Loading logs...</div>';
+  
+  // Load and display the result for this task if it exists
+  try {
+    const sr = await fetch(API + '/task/' + taskId + '/status');
+    const sd = await sr.json();
+    if (sd.status === 'completed' && (sd.result || sd.analysis)) {
+      showResult(sd);
+    }
+  } catch {}
+  
+  try {
+    const r = await fetch(API + '/task/' + taskId + '/logs');
+    const d = await r.json();
+    renderLogs(d.logs || []);
+  } catch {}
+}
+
+// ── RESET ─────────────────────────────────────────────────────
+function resetUI() {
+  if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+  seenLogs.clear();
+  activeChips.clear();
+  ['Planner','Supervisor','Executor','Analyst'].forEach(a =>
+    document.getElementById('chip-' + a)?.classList.remove('on'));
+  document.getElementById('logbox').innerHTML = '<div class="empty">Running pipeline...</div>';
+  document.getElementById('result-placeholder').style.display = 'block';
+  document.getElementById('result-section').style.display = 'none';
+  document.getElementById('apill').style.display = 'none';
+  document.getElementById('pbar').style.width = '0%';
+  document.getElementById('dbg-box').innerHTML = '';
+  document.getElementById('dbg-wrap').style.display = 'none';
+}
+
+// ── HELPERS ───────────────────────────────────────────────────
+function fmt(ts) {
+  if (!ts) return '';
+  const d = new Date(ts);
+  return isNaN(d) ? ts : d.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'});
+}
+function esc(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+// ── INIT ──────────────────────────────────────────────────────
+checkHealth();
+loadHistory();
+</script>
 </body>
 </html>

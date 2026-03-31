@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test Frontend Fixes</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .test-section { margin: 20px 0; padding: 15px; border: 1px solid #ccc; }
+        .result { background: #f0f0f0; padding: 10px; margin: 10px 0; }
+        .log { background: #e8e8e8; padding: 5px; margin: 5px 0; font-family: monospace; }
+    </style>
+</head>
+<body>
+    <h1>Testing Frontend Fixes</h1>
+    
+    <div class="test-section">
+        <h2>Test 1: Check API Connection</h2>
+        <button onclick="testAPI()">Test API</button>
+        <div id="api-result" class="result"></div>
+    </div>
+    
+    <div class="test-section">
+        <h2>Test 2: Submit Task and Check Result Display</h2>
+        <button onclick="testTaskSubmission()">Submit Test Task</button>
+        <div id="task-result" class="result"></div>
+    </div>
+    
+    <div class="test-section">
+        <h2>Test 3: Check Log Display</h2>
+        <button onclick="testLogs()">Get Logs</button>
+        <div id="logs-result" class="result"></div>
+    </div>
+
+    <script>
+        const API = 'http://localhost:8000';
+        
+        async function testAPI() {
+            try {
+                const response = await fetch(API + '/');
+                const data = await response.json();
+                document.getElementById('api-result').innerHTML = 
+                    '<strong>API Status:</strong> ' + JSON.stringify(data, null, 2);
+            } catch (error) {
+                document.getElementById('api-result').innerHTML = 
+                    '<strong>Error:</strong> ' + error.message;
+            }
+        }
+        
+        async function testTaskSubmission() {
+            const resultDiv = document.getElementById('task-result');
+            resultDiv.innerHTML = '<em>Submitting task...</em>';
+            
+            try {
+                // Submit task
+                const submitResponse = await fetch(API + '/task', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({user_input: 'Simple test task'})
+                });
+                const submitData = await submitResponse.json();
+                
+                resultDiv.innerHTML = '<strong>Task Submitted:</strong> ' + JSON.stringify(submitData, null, 2);
+                
+                // Poll for completion
+                const taskId = submitData.task_id;
+                const pollInterval = setInterval(async () => {
+                    try {
+                        const statusResponse = await fetch(API + '/task/' + taskId + '/status');
+                        const statusData = await statusResponse.json();
+                        
+                        if (statusData.status === 'completed') {
+                            clearInterval(pollInterval);
+                            resultDiv.innerHTML += '<br><br><strong>Final Result:</strong><br>' +
+                                '<div style="background: #e8f5e8; padding: 10px; border: 1px solid #4caf50;">' +
+                                '<strong>Result:</strong> ' + (statusData.result || 'No result') + '<br>' +
+                                '<strong>Analysis:</strong> ' + (statusData.analysis || 'No analysis') +
+                                '</div>';
+                        } else if (statusData.status === 'failed') {
+                            clearInterval(pollInterval);
+                            resultDiv.innerHTML += '<br><br><strong>Task Failed:</strong> ' + 
+                                (statusData.error || statusData.reason || 'Unknown error');
+                        } else {
+                            resultDiv.innerHTML += '<br><em>Status: ' + statusData.status + '...</em>';
+                        }
+                    } catch (error) {
+                        clearInterval(pollInterval);
+                        resultDiv.innerHTML += '<br><strong>Status check error:</strong> ' + error.message;
+                    }
+                }, 1000);
+                
+            } catch (error) {
+                resultDiv.innerHTML = '<strong>Error:</strong> ' + error.message;
+            }
+        }
+        
+        async function testLogs() {
+            const resultDiv = document.getElementById('logs-result');
+            resultDiv.innerHTML = '<em>Fetching logs...</em>';
+            
+            try {
+                // Get latest task
+                const tasksResponse = await fetch(API + '/tasks');
+                const tasksData = await tasksResponse.json();
+                
+                if (tasksData.tasks && tasksData.tasks.length > 0) {
+                    const latestTask = tasksData.tasks[0];
+                    const taskId = latestTask.id;
+                    
+                    // Get logs for latest task
+                    const logsResponse = await fetch(API + '/task/' + taskId + '/logs');
+                    const logsData = await logsResponse.json();
+                    
+                    let logsHtml = '<strong>Logs for Task #' + taskId + ':</strong><br>';
+                    if (logsData.logs && logsData.logs.length > 0) {
+                        logsData.logs.forEach(log => {
+                            logsHtml += '<div class="log"><strong>' + log.agent + ':</strong> ' + log.message + '</div>';
+                        });
+                    } else {
+                        logsHtml += '<em>No logs found</em>';
+                    }
+                    
+                    resultDiv.innerHTML = logsHtml;
+                } else {
+                    resultDiv.innerHTML = '<em>No tasks found</em>';
+                }
+            } catch (error) {
+                resultDiv.innerHTML = '<strong>Error:</strong> ' + error.message;
+            }
+        }
+    </script>
+</body>
+</html>

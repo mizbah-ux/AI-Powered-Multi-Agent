@@ -25,6 +25,16 @@ def init_db():
             FOREIGN KEY (task_id) REFERENCES tasks(id)
         )
     """)
+
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS memory (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            task_id INTEGER,
+            agent_name TEXT,
+            content TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
     
     conn.commit()
     conn.close()
@@ -73,3 +83,25 @@ def get_all_tasks() -> list:
     rows = cursor.fetchall()
     conn.close()
     return [{"id": r[0], "input": r[1], "status": r[2], "created_at": r[3]} for r in rows]
+
+def add_memory(task_id: int, agent_name: str, content: str):
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute(
+        "INSERT INTO memory (task_id, agent_name, content) VALUES (?, ?, ?)",
+        (task_id, agent_name, content)
+    )
+    conn.commit()
+    conn.close()
+
+
+def get_memory(task_id: int):
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT agent_name, content FROM memory WHERE task_id = ? ORDER BY id ASC",
+        (task_id,)
+    )
+    rows = cursor.fetchall()
+    conn.close()
+    return [{"agent": r[0], "content": r[1]} for r in rows]
