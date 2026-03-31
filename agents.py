@@ -1,7 +1,8 @@
 import os
-from groq import Groq
-from database import add_log, get_memory, update_task_status
 import re
+import requests
+from groq import Groq
+from database import add_log, get_memory, update_task_status, get_similar_tasks, get_similar_feedback
 
 
 client = Groq(api_key=os.getenv("GROQ_API_KEY"))
@@ -20,13 +21,233 @@ def call_llm(system_prompt: str, user_message: str) -> str:
     return response.choices[0].message.content
 
 
+def perform_search(query: str) -> str:
+    """
+    Perform real web search using SerpAPI with DuckDuckGo fallback.
+    
+    Args:
+        query: Search query string
+        
+    Returns:
+        Formatted search results (top 3 results)
+    """
+    # Extract search intent from step text
+    clean_query = re.sub(r'^(search|find|look for|search for)\s+', '', query.lower()).strip()
+    
+    # Try SerpAPI first
+    serpapi_key = os.getenv("SERPAPI_KEY")
+    if serpapi_key:
+        try:
+            return _search_with_serpapi(clean_query)
+        except Exception as e:
+            print(f"SerpAPI failed: {e}")
+    
+    # Fallback to DuckDuckGo
+    try:
+        return _search_with_duckduckgo(clean_query)
+    except Exception as e:
+        print(f"DuckDuckGo failed: {e}")
+        return "Search temporarily unavailable. Please try again later."
+
+
+def _search_with_serpapi(query: str) -> str:
+    """Search using SerpAPI."""
+    url = "https://serpapi.com/search"
+    params = {
+        "api_key": os.getenv("SERPAPI_KEY"),
+        "engine": "google",
+        "q": query,
+        "num": 3,
+        "safe": "active"
+    }
+    
+    response = requests.get(url, params=params, timeout=10)
+    response.raise_for_status()
+    
+    data = response.json()
+    
+    if "organic_results" not in data or not data["organic_results"]:
+        return f"No results found for: {query}"
+    
+    results = data["organic_results"][:3]
+    formatted_results = []
+    
+    for i, result in enumerate(results, 1):
+        title = result.get("title", "No title")
+        snippet = result.get("snippet", "No description available")
+        link = result.get("link", "")
+        
+        formatted_results.append(f"{i}. {title}")
+        formatted_results.append(f"   {snippet[:150]}{'...' if len(snippet) > 150 else ''}")
+        formatted_results.append(f"   {link}")
+        formatted_results.append("")  # Empty line for readability
+    
+    return "\n".join(formatted_results).strip()
+
+
+def _search_with_duckduckgo(query: str) -> str:
+    """Search using DuckDuckGo HTML scraping."""
+    url = "https://duckduckgo.com/html/"
+    params = {
+        "q": query,
+        "kl": "us-en"
+    }
+    
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+    }
+    
+    response = requests.get(url, params=params, headers=headers, timeout=10)
+    response.raise_for_status()
+    
+    # Parse HTML results (simplified parsing)
+    from bs4 import BeautifulSoup
+    soup = BeautifulSoup(response.text, 'html.parser')
+    
+    results = []
+    result_divs = soup.find_all('div', class_='result')[:3]
+    
+    for i, div in enumerate(result_divs, 1):
+        try:
+            title_tag = div.find('a', class_='result__a')
+            title = title_tag.get_text(strip=True) if title_tag else "No title"
+            
+            snippet_tag = div.find('a', class_='result__snippet')
+            snippet = snippet_tag.get_text(strip=True) if snippet_tag else "No description available"
+            
+            link = title_tag.get('href', '') if title_tag else ""
+            
+            results.append(f"{i}. {title}")
+            results.append(f"   {snippet[:150]}{'...' if len(snippet) > 150 else ''}")
+            results.append(f"   {link}")
+            results.append("")  # Empty line for readability
+            
+        except Exception as e:
+            print(f"Error parsing DuckDuckGo result {i}: {e}")
+            continue
+    
+    if not results:
+        return f"No results found for: {query}"
+    
+    return "\n".join(results).strip()
+
+
+def improve_plan(previous_plan: list, feedback: str) -> list:
+    """
+    Use LLM to rewrite plan based on feedback.
+    
+    Args:
+        previous_plan: List of previous plan steps
+        feedback: Analyst feedback text
+        
+    Returns:
+        List of improved plan steps
+    """
+    # Convert plan list to text
+    plan_text = "\n".join([f"{i+1}. {step}" for i, step in enumerate(previous_plan)])
+    
+    system_prompt = """
+    You are a plan improvement specialist. Rewrite the failed plan based on the feedback.
+    
+    REQUIREMENTS:
+    - Output EXACTLY 3-5 numbered steps
+    - Format MUST be: 1. Step one, 2. Step two, etc.
+    - Address the specific feedback provided
+    - Keep steps clear and actionable
+    - Do NOT use bullets, dashes, or explanations
+    
+    Learn from the feedback to create a better plan.
+    """
+    
+    user_message = f"""
+    Previous failed plan:
+    {plan_text}
+    
+    Feedback to address:
+    {feedback}
+    
+    Please provide an improved plan that addresses this feedback:
+    """
+    
+    try:
+        result = call_llm(system_prompt, user_message)
+        
+        # Parse the improved plan
+        improved_steps = []
+        for line in result.strip().split('\n'):
+            line = line.strip()
+            match = re.match(r"^(\d+[\.\)]\s*|-|\•)\s*(.+)", line)
+            if match:
+                step = match.group(2)
+                improved_steps.append(step)
+        
+        return improved_steps
+        
+    except Exception as e:
+        # Fallback: return original plan if improvement fails
+        print(f"Plan improvement failed: {e}")
+        return previous_plan
+
+
 class PlannerAgent:
+    def get_similar_tasks(self, user_input: str, task_id: int = 0) -> str:
+        """Retrieve similar past successful tasks from global memory."""
+        try:
+            similar_tasks = get_similar_tasks(user_input, limit=2)
+            if not similar_tasks:
+                return ""
+            
+            context = "Similar past successful tasks:\n"
+            for i, task in enumerate(similar_tasks, 1):
+                context += f"\nTask {i}:\n"
+                context += f"Task: {task['task_input']}\n"
+                context += f"Plan: {task['plan']}\n"
+                context += f"Result: {task['result']}\n"
+                context += f"Score: {task['score']}/10\n"
+            
+            return context
+        except Exception as e:
+            add_log(task_id, "Planner", f"Error retrieving similar tasks: {str(e)}")
+            return ""
+
+    def get_past_feedback(self, user_input: str, task_id: int = 0) -> str:
+        """Retrieve past feedback and improvements for learning."""
+        try:
+            similar_feedback = get_similar_feedback(user_input, limit=3)
+            if not similar_feedback:
+                return ""
+            
+            context = "\nPast failures and improvements:\n"
+            for i, feedback in enumerate(similar_feedback, 1):
+                context += f"\nLearning {i}:\n"
+                context += f"Task: {feedback['task_input']}\n"
+                context += f"Mistake: {feedback['feedback']}\n"
+                context += f"Improved plan: {feedback['improved_plan']}\n"
+                context += f"Score: {feedback['score']}/10\n"
+            
+            return context
+        except Exception as e:
+            add_log(task_id, "Planner", f"Error retrieving past feedback: {str(e)}")
+            return ""
+
     def run(self, task_id: int, user_input: str) -> list:
         add_log(task_id, "Planner", f"Received request: {user_input}")
     
-        # 🧠 Fetch memory
+        # 🧠 Fetch task-level memory
         memory = get_memory(task_id)
         memory_text = "\n".join([m["content"] for m in memory]) if memory else ""
+        
+        # 🧠 Fetch global memory for similar tasks
+        global_memory_context = self.get_similar_tasks(user_input, task_id)
+        if global_memory_context:
+            similar_tasks = get_similar_tasks(user_input, limit=2)
+            add_log(task_id, "Planner", f"Found {len(similar_tasks)} similar past tasks")
+        
+        # 🧠 Fetch past feedback for learning
+        feedback_context = self.get_past_feedback(user_input, task_id)
+        if feedback_context:
+            similar_feedback = get_similar_feedback(user_input, limit=3)
+            add_log(task_id, "Planner", f"Found {len(similar_feedback)} past learning examples")
     
         system_prompt = """
         You are a task planner.
@@ -41,12 +262,18 @@ class PlannerAgent:
         3. Step three
         
         DO NOT use bullets, dashes, or explanations.
+        
+        Learn from similar past tasks and avoid repeating past mistakes.
         """
     
-        # 🧠 Inject memory context
+        # 🧠 Inject all learning contexts
         full_input = f"""
         Previous context:
         {memory_text}
+        
+        {global_memory_context}
+        
+        {feedback_context}
     
         New request:
         {user_input}
@@ -104,9 +331,14 @@ class ExecutorAgent:
         for i, step in enumerate(steps, 1):
             add_log(task_id, "Executor", f"Running step {i}: {step}")
 
-            # 🧠 Tool-based routing
+            # 🧠 Tool-based routing with real search
             if "search" in step.lower():
-                step_result = f"(Simulated search result for: {step})"
+                try:
+                    step_result = perform_search(step)
+                    add_log(task_id, "Executor", f"Search completed for: {step}")
+                except Exception as e:
+                    add_log(task_id, "Executor", f"Search failed: {str(e)}")
+                    step_result = f"Search temporarily unavailable. Please try again later."
 
             elif "calculate" in step.lower():
                 step_result = "Calculated result: 42"

@@ -8,8 +8,8 @@ import os
 
 load_dotenv()
 
-from database import init_db, create_task, update_task_status, get_logs, get_all_tasks, add_log, add_memory
-from agents import PlannerAgent, SupervisorAgent, ExecutorAgent, AnalystAgent
+from database import init_db, create_task, update_task_status, get_logs, get_all_tasks, add_log, add_memory, store_global_memory, get_analytics, store_feedback_learning, update_improved_plan
+from agents import PlannerAgent, SupervisorAgent, ExecutorAgent, AnalystAgent, improve_plan
 
 app = FastAPI(title="Multi-Agent System")
 
@@ -81,6 +81,7 @@ def _run_pipeline(task_id: int, user_input: str):
         attempt = 0
         result = ""
         analysis = ""
+        learning_id = None  # Track feedback learning entry
 
         while attempt < max_attempts:
             executor = ExecutorAgent()
@@ -93,11 +94,31 @@ def _run_pipeline(task_id: int, user_input: str):
             score = int(score_match.group(1)) if score_match else 0
 
             if score >= 8:
+                # Success - update learning if this was a retry
+                if learning_id:
+                    improved_plan_text = "\n".join([f"{i+1}. {step}" for i, step in enumerate(steps)])
+                    update_improved_plan(learning_id, improved_plan_text)
+                    add_log(task_id, "SYS", f"Learning updated: Improved plan stored (Score: {score}/10)")
                 break
 
-            add_log(task_id, "Supervisor", "Low quality detected. Re-planning...")
-            planner = PlannerAgent()
-            steps = planner.run(task_id, user_input)
+            # Score too low - store feedback for learning if first attempt
+            if attempt == 0:
+                failed_plan_text = "\n".join([f"{i+1}. {step}" for i, step in enumerate(steps)])
+                learning_id = store_feedback_learning(user_input, failed_plan_text, analysis, score)
+                add_log(task_id, "SYS", f"Feedback stored for learning (ID: {learning_id}, Score: {score}/10)")
+
+            # Use improved plan instead of blind re-planning
+            if attempt < max_attempts - 1:  # Don't improve on last attempt
+                add_log(task_id, "SYS", "Improving plan based on feedback...")
+                steps = improve_plan(steps, analysis)
+                add_log(task_id, "SYS", f"Plan improved to {len(steps)} steps")
+                
+                # Get supervisor approval for improved plan
+                if supervisor.approve_plan(task_id, steps):
+                    add_log(task_id, "SYS", "Improved plan approved")
+                else:
+                    add_log(task_id, "SYS", "Improved plan rejected, proceeding with original")
+            
             attempt += 1
 
         add_memory(task_id, "FinalResult", result)
@@ -109,6 +130,23 @@ def _run_pipeline(task_id: int, user_input: str):
 
         # Store result so /task/{id}/status can return it
         task_results[task_id] = {"result": result, "analysis": analysis}
+
+        # 🧠 Store in global memory if score >= 8
+        if score >= 8:
+            try:
+                plan_text = "\n".join([f"{i+1}. {step}" for i, step in enumerate(steps)])
+                memory_id = store_global_memory(
+                    task_input=user_input,
+                    plan=plan_text,
+                    result=result,
+                    analysis=analysis,
+                    score=score
+                )
+                add_log(task_id, "SYS", f"Stored in global memory (ID: {memory_id}, Score: {score}/10)")
+            except Exception as e:
+                add_log(task_id, "SYS", f"Failed to store in global memory: {str(e)}")
+        else:
+            add_log(task_id, "SYS", f"Score {score}/10 too low for global memory storage")
 
     except Exception as e:
         update_task_status(task_id, "failed")
@@ -124,6 +162,20 @@ def get_task_logs(task_id: int):
 @app.get("/tasks")
 def list_tasks():
     return {"tasks": get_all_tasks()}
+
+
+@app.get("/analytics")
+def get_system_analytics():
+    """Get system performance analytics."""
+    try:
+        analytics = get_analytics()
+        return {
+            "total_tasks": analytics["total_tasks"],
+            "success_rate": analytics["success_rate"],
+            "avg_score": analytics["avg_score"]
+        }
+    except Exception as e:
+        return {"error": str(e), "total_tasks": 0, "success_rate": 0, "avg_score": 0}
 
 
 @app.get("/")
