@@ -5,11 +5,12 @@ from pydantic import BaseModel
 from dotenv import load_dotenv
 import re
 import os
+from datetime import datetime
 
 load_dotenv()
 
 from database import init_db, create_task, update_task_status, get_logs, get_all_tasks, add_log, add_memory, store_global_memory, get_analytics, store_feedback_learning, update_improved_plan
-from agents import PlannerAgent, SupervisorAgent, ExecutorAgent, AnalystAgent, improve_plan
+from agents import PlannerAgent, SupervisorAgent, ExecutorAgent, AnalystAgent, improve_plan, refine_plan_with_feedback
 
 app = FastAPI(title="Multi-Agent System")
 
@@ -67,23 +68,47 @@ def _run_pipeline(task_id: int, user_input: str):
     update_task_status(task_id, "running")
     try:
         planner = PlannerAgent()
-        steps = planner.run(task_id, user_input)
-
         supervisor = SupervisorAgent()
-        approved = supervisor.approve_plan(task_id, steps)
-
-        if not approved:
-            update_task_status(task_id, "failed")
-            task_results[task_id] = {"reason": "Plan rejected by Supervisor"}
-            return
-
+        
         max_attempts = 2
         attempt = 0
+        steps = []
+        approved = False
+        feedback = ""
+        
+        # Supervisor approval retry loop
+        while attempt < max_attempts:
+            if attempt == 0:
+                steps = planner.run(task_id, user_input)
+                add_log(task_id, "SYS", f"Generated initial plan with {len(steps)} steps")
+            else:
+                add_log(task_id, "SYS", f"Plan rejected, refining...")
+                add_log(task_id, "SYS", f"Retry attempt {attempt}")
+                steps = refine_plan_with_feedback(steps, feedback)
+                add_log(task_id, "SYS", f"Improved plan generated with {len(steps)} steps")
+            
+            approved, feedback = supervisor.approve_plan(task_id, steps)
+            
+            if approved:
+                add_log(task_id, "SYS", "Plan approved by Supervisor")
+                break
+            else:
+                add_log(task_id, "SYS", f"Plan rejected: {feedback}")
+                if attempt == max_attempts - 1:
+                    update_task_status(task_id, "failed")
+                    task_results[task_id] = {"reason": f"Plan rejected after {max_attempts} attempts. Final feedback: {feedback}"}
+                    return
+            
+            attempt += 1
+
+        # Continue with execution (existing logic)
+        max_execution_attempts = 2
+        execution_attempt = 0
         result = ""
         analysis = ""
         learning_id = None  # Track feedback learning entry
 
-        while attempt < max_attempts:
+        while execution_attempt < max_execution_attempts:
             executor = ExecutorAgent()
             result = executor.run(task_id, steps, user_input)
 
@@ -102,24 +127,25 @@ def _run_pipeline(task_id: int, user_input: str):
                 break
 
             # Score too low - store feedback for learning if first attempt
-            if attempt == 0:
+            if execution_attempt == 0:
                 failed_plan_text = "\n".join([f"{i+1}. {step}" for i, step in enumerate(steps)])
                 learning_id = store_feedback_learning(user_input, failed_plan_text, analysis, score)
                 add_log(task_id, "SYS", f"Feedback stored for learning (ID: {learning_id}, Score: {score}/10)")
 
             # Use improved plan instead of blind re-planning
-            if attempt < max_attempts - 1:  # Don't improve on last attempt
+            if execution_attempt < max_execution_attempts - 1:  # Don't improve on last attempt
                 add_log(task_id, "SYS", "Improving plan based on feedback...")
                 steps = improve_plan(steps, analysis)
                 add_log(task_id, "SYS", f"Plan improved to {len(steps)} steps")
                 
                 # Get supervisor approval for improved plan
-                if supervisor.approve_plan(task_id, steps):
+                approved, feedback = supervisor.approve_plan(task_id, steps)
+                if approved:
                     add_log(task_id, "SYS", "Improved plan approved")
                 else:
                     add_log(task_id, "SYS", "Improved plan rejected, proceeding with original")
             
-            attempt += 1
+            execution_attempt += 1
 
         add_memory(task_id, "FinalResult", result)
         add_memory(task_id, "Analysis", analysis)
@@ -152,6 +178,25 @@ def _run_pipeline(task_id: int, user_input: str):
         update_task_status(task_id, "failed")
         task_results[task_id] = {"error": str(e)}
         add_log(task_id, "SYS", f"Pipeline error: {str(e)}")
+
+
+@app.get("/task/{task_id}/debug")
+def get_task_debug(task_id: int):
+    """Debug endpoint to check log count and timing."""
+    try:
+        logs = get_logs(task_id)
+        tasks = get_all_tasks()
+        task_info = next((t for t in tasks if t["id"] == task_id), None)
+        
+        return {
+            "task_id": task_id,
+            "task_status": task_info["status"] if task_info else "not_found",
+            "log_count": len(logs),
+            "logs": logs,
+            "timestamp": str(datetime.now()) if 'datetime' in globals() else "unknown"
+        }
+    except Exception as e:
+        return {"error": str(e), "task_id": task_id}
 
 
 @app.get("/task/{task_id}/logs")

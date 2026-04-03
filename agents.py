@@ -132,6 +132,64 @@ def _search_with_duckduckgo(query: str) -> str:
     return "\n".join(results).strip()
 
 
+def refine_plan_with_feedback(previous_steps: list, feedback: str) -> list:
+    """
+    Use LLM to generate a better plan based on Supervisor rejection feedback.
+    
+    Args:
+        previous_steps: List of previous plan steps
+        feedback: Supervisor rejection reason
+        
+    Returns:
+        List of improved plan steps
+    """
+    # Convert plan list to text
+    plan_text = "\n".join([f"{i+1}. {step}" for i, step in enumerate(previous_steps)])
+    
+    system_prompt = """
+    You are a plan refinement specialist. The supervisor rejected the previous plan.
+    Create a better plan that addresses the specific feedback provided.
+    
+    REQUIREMENTS:
+    - Output EXACTLY 3-5 numbered steps
+    - Format MUST be: 1. Step one, 2. Step two, etc.
+    - Address the specific supervisor feedback
+    - Keep steps clear, actionable, and logical
+    - Do NOT use bullets, dashes, or explanations
+    
+    Learn from the feedback to create a superior plan.
+    """
+    
+    user_message = f"""
+    Previous rejected plan:
+    {plan_text}
+    
+    Supervisor feedback to address:
+    {feedback}
+    
+    Please provide an improved plan that addresses this feedback:
+    """
+    
+    try:
+        result = call_llm(system_prompt, user_message)
+        
+        # Parse the improved plan
+        improved_steps = []
+        for line in result.strip().split('\n'):
+            line = line.strip()
+            match = re.match(r"^(\d+[\.\)]\s*|-|\•)\s*(.+)", line)
+            if match:
+                step = match.group(2)
+                improved_steps.append(step)
+        
+        return improved_steps if improved_steps else previous_steps
+        
+    except Exception as e:
+        # Fallback: return original plan if improvement fails
+        print(f"Plan refinement failed: {e}")
+        return previous_steps
+
+
 def improve_plan(previous_plan: list, feedback: str) -> list:
     """
     Use LLM to rewrite plan based on feedback.
@@ -297,7 +355,7 @@ class PlannerAgent:
 
 
 class SupervisorAgent:
-    def approve_plan(self, task_id: int, steps: list) -> bool:
+    def approve_plan(self, task_id: int, steps: list) -> tuple[bool, str]:
         add_log(task_id, "Supervisor", f"Reviewing plan with {len(steps)} steps")
 
         system_prompt = """
@@ -315,8 +373,11 @@ class SupervisorAgent:
         add_log(task_id, "Supervisor", f"Decision: {response}")
 
         if "APPROVED" in response:
-            return True
-        return False
+            return True, ""
+        else:
+            # Extract rejection reason
+            reason = response.replace("REJECTED:", "").strip()
+            return False, reason
     
     def finalize(self, task_id: int, analysis: str):
         add_log(task_id, "Supervisor", f"Task complete. Final verdict: {analysis[:100]}")

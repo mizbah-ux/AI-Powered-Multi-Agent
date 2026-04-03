@@ -86,8 +86,10 @@ def add_log(task_id: int, agent_name: str, message: str):
         "INSERT INTO logs (task_id, agent_name, message) VALUES (?, ?, ?)",
         (task_id, agent_name, message)
     )
-    conn.commit()
+    conn.commit()  # Ensure immediate commit
     conn.close()
+    # Debug: print to console for immediate visibility
+    print(f"[LOG] Task {task_id} - {agent_name}: {message}")
 
 def get_logs(task_id: int) -> list:
     conn = sqlite3.connect(DB_PATH)

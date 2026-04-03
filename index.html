@@ -296,49 +296,59 @@ async function pollUntilDone(taskId) {
       attempts++;
 
       try {
-        // Fetch logs first
-        const lr = await fetch(API + '/task/' + taskId + '/logs');
-        const ld = await lr.json();
-        renderLogs(ld.logs || []);
+        // Fetch logs first with error handling
+        try {
+          const lr = await fetch(API + '/task/' + taskId + '/logs');
+          if (!lr.ok) throw new Error('Logs fetch failed: ' + lr.status);
+          const ld = await lr.json();
+          renderLogs(ld.logs || []);
+        } catch (logErr) {
+          dbg('Log fetch error: ' + logErr.message, 'err');
+        }
 
         // Then fetch status
-        const sr = await fetch(API + '/task/' + taskId + '/status');
-        const sd = await sr.json();
-        
-        dbg('poll #' + attempts + '  status=' + sd.status + '  last=' + lastStatus);
+        try {
+          const sr = await fetch(API + '/task/' + taskId + '/status');
+          if (!sr.ok) throw new Error('Status fetch failed: ' + sr.status);
+          const sd = await sr.json();
+          
+          dbg('poll #' + attempts + '  status=' + sd.status + '  last=' + lastStatus);
 
-        // Status changed to completed - fetch fresh result
-        if (sd.status === 'completed' && lastStatus !== 'completed') {
-          dbg('Status changed to completed, fetching fresh result...', 'info');
-          // Fetch fresh status to get the result
-          const freshSr = await fetch(API + '/task/' + taskId + '/status');
-          const freshSd = await freshSr.json();
-          clearInterval(pollTimer);
-          dbg('Pipeline completed ✓', 'ok');
-          dbg('Fresh result data: ' + JSON.stringify(freshSd, null, 2), 'info');
-          showResult(freshSd);
-          resolve();
+          // Status changed to completed - fetch fresh result
+          if (sd.status === 'completed' && lastStatus !== 'completed') {
+            dbg('Status changed to completed, fetching fresh result...', 'info');
+            // Fetch fresh status to get the result
+            const freshSr = await fetch(API + '/task/' + taskId + '/status');
+            const freshSd = await freshSr.json();
+            clearInterval(pollTimer);
+            dbg('Pipeline completed ✓', 'ok');
+            dbg('Fresh result data: ' + JSON.stringify(freshSd, null, 2), 'info');
+            showResult(freshSd);
+            resolve();
+          }
+          else if (sd.status === 'failed') {
+            clearInterval(pollTimer);
+            dbg('Pipeline failed: ' + (sd.error || sd.reason || '?'), 'err');
+            showError(sd.error || sd.reason || 'Pipeline failed');
+            resolve();
+          }
+          else if (attempts >= MAX) {
+            clearInterval(pollTimer);
+            dbg('Timed out after ' + MAX + 's', 'err');
+            showError('Timed out waiting for pipeline to complete');
+            resolve();
+          }
+          
+          lastStatus = sd.status;
+        } catch (statusErr) {
+          dbg('Status fetch error: ' + statusErr.message, 'err');
         }
-        else if (sd.status === 'failed') {
-          clearInterval(pollTimer);
-          dbg('Pipeline failed: ' + (sd.error || sd.reason || '?'), 'err');
-          showError(sd.error || sd.reason || 'Pipeline failed');
-          resolve();
-        }
-        else if (attempts >= MAX) {
-          clearInterval(pollTimer);
-          dbg('Timed out after ' + MAX + 's', 'err');
-          showError('Timed out waiting for pipeline to complete');
-          resolve();
-        }
-        
-        lastStatus = sd.status;
 
       } catch (e) {
         dbg('Poll error: ' + e.message, 'err');
       }
 
-    }, 1000); // poll every 1 second
+    }, 300); // poll every 0.3 seconds for very responsive updates
   });
 }
 
@@ -393,11 +403,18 @@ function showError(msg) {
 function renderLogs(logs) {
   const box = document.getElementById('logbox');
   let added = false;
-  for (const log of logs) {
+  let newLogCount = 0;
+  
+  // Sort logs by timestamp to ensure proper order
+  const sortedLogs = logs.sort((a, b) => new Date(a.time) - new Date(b.time));
+  
+  for (const log of sortedLogs) {
     const key = log.agent + '|' + log.message + '|' + log.time;
     if (seenLogs.has(key)) continue;
     seenLogs.add(key);
     added = true;
+    newLogCount++;
+    
     box.querySelector('.empty')?.remove();
     const row = document.createElement('div');
     row.className = 'logrow';
@@ -412,7 +429,11 @@ function renderLogs(logs) {
     box.appendChild(row);
     activateChip(log.agent);
   }
-  if (added) box.scrollTop = box.scrollHeight;
+  
+  if (added) {
+    box.scrollTop = box.scrollHeight;
+    dbg(`Added ${newLogCount} new logs (total: ${logs.length})`, 'info');
+  }
 }
 
 function sysLog(msg) {
