@@ -372,7 +372,26 @@ function showResult(data) {
   box.style.borderColor = '';
 
   if (resultText && resultText !== 'undefined' && resultText !== 'null') {
-    box.textContent = resultText;
+    function formatReport(text) {
+    return text
+      .replace(/📊 EXECUTIVE SUMMARY/g, '<h3>📊 Executive Summary</h3>')
+      .replace(/🔍 KEY FINDINGS/g, '<h3>🔍 Key Findings</h3>')
+      .replace(/📈 ANALYSIS/g, '<h3>📈 Analysis</h3>')
+      .replace(/⚠️ RISKS & LIMITATIONS/g, '<h3>⚠️ Risks & Limitations</h3>')
+      .replace(/💡 STRATEGIC RECOMMENDATIONS/g, '<h3>💡 Recommendations</h3>')
+      .replace(/🧾 FINAL VERDICT/g, '<h3>🧾 Final Verdict</h3>')
+      .replace(/\n/g, '<br>');
+  }
+  if (resultText.includes(".png")) {
+  box.innerHTML += `<img src="${resultText}" style="width:100%;margin-top:10px;border-radius:10px;">`;
+}
+
+  // Replace this:
+  box.textContent = resultText;
+
+  // With this:
+  box.innerHTML = formatReport(resultText);
+
     dbg('Result displayed successfully (' + resultText.length + ' chars)', 'ok');
   } else {
     box.textContent = 'Pipeline completed but no result was returned. Check the logs for details.';

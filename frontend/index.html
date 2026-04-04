@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Multi-Agent System</title>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;700;800&display=swap" rel="stylesheet" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <link rel="stylesheet" href="./css/styles.css" />
+</head>
+<body>
+<div class="orb orb-1"></div><div class="orb orb-2"></div>
+<div class="wrapper">
+  <header>
+    <div class="logo">
+      <h1>Multi<span>Agent</span> System</h1>
+      <p>AI-Powered Business Intelligence Platform</p>
+    </div>
+    <div class="header-stats">
+      <div class="stat-item">
+        <span class="stat-label">System Status</span>
+        <div class="pill"><span class="dot"></span><span id="api-status">CONNECTING...</span></div>
+      </div>
+      <div class="stat-item">
+        <span class="stat-label">Active Tasks</span>
+        <span class="stat-value" id="active-tasks-count">0</span>
+      </div>
+    </div>
+  </header>
+
+  <div class="grid">
+
+    <!-- Submit -->
+    <div class="card full">
+      <div class="label">// Submit Task</div>
+      <div class="upload-section">
+        <div class="upload-area" id="upload-area">
+          <div class="upload-icon">📁</div>
+          <div class="upload-text">
+            <div class="upload-title">Drop file here or click to upload</div>
+            <div class="upload-subtitle">CSV, Excel (.xlsx), JSON (Max 10MB)</div>
+          </div>
+          <input type="file" id="file-input" accept=".csv,.xlsx,.json" style="display: none;">
+        </div>
+        <div class="file-preview" id="file-preview" style="display: none;">
+          <div class="file-info">
+            <span class="file-name" id="file-name"></span>
+            <button class="btn-sm" onclick="removeFile()">Remove</button>
+          </div>
+          <div class="file-data-preview" id="file-data-preview"></div>
+        </div>
+      </div>
+      <textarea id="task-input" rows="3" placeholder="Describe what you want the agent system to do...&#10;e.g. &quot;Analyze the uploaded sales data and generate insights&quot;"></textarea>
+      <div class="row">
+        <span class="hint" id="char-count">0 / 500 chars</span>
+        <button class="btn" id="submit-btn" onclick="submitTask()">Run Pipeline →</button>
+      </div>
+      <div class="pbar"><div class="pfill" id="pbar"></div></div>
+    </div>
+
+    <!-- Pipeline + Logs -->
+    <div class="card">
+      <div class="label">// Agent Pipeline Status</div>
+      <div class="chips">
+        <div class="chip" data-a="Planner"    id="chip-Planner">   <div class="icon">🧠</div><div class="name">Planner</div><div class="status">IDLE</div></div>
+        <div class="chip" data-a="Supervisor" id="chip-Supervisor"><div class="icon">👁️</div><div class="name">Supervisor</div><div class="status">IDLE</div></div>
+        <div class="chip" data-a="Executor"   id="chip-Executor">  <div class="icon">⚡</div><div class="name">Executor</div><div class="status">IDLE</div></div>
+        <div class="chip" data-a="Analyst"    id="chip-Analyst">   <div class="icon">📊</div><div class="name">Analyst</div><div class="status">IDLE</div></div>
+      </div>
+      <div class="label">// Live Activity Feed</div>
+      <div class="logbox" id="logbox"><div class="empty">Submit a task to see live agent activity</div></div>
+    </div>
+
+    <!-- Result -->
+    <div class="card">
+      <div class="label">// Execution Result</div>
+      <div id="result-placeholder">Results will appear after pipeline completes</div>
+      <div id="result-section">
+        <div class="result-controls">
+          <button class="btn-sm" id="expand-btn" onclick="expandResult()" style="display: none;">⛶ Fullscreen</button>
+          <button class="btn-sm" id="download-btn" onclick="downloadResult()" style="display: none;">📥 Download HTML</button>
+          <button class="btn-sm" id="download-pdf-btn" onclick="downloadPDFResult()" style="display: none;">📄 Download PDF</button>
+        </div>
+        <div class="rbox" id="rbox"></div>
+        <div class="apill" id="apill"></div>
+      </div>
+    </div>
+
+    <!-- Analytics -->
+    <div class="card">
+      <div class="label">// System Analytics</div>
+      <div id="analytics-content">
+        <div class="metric">
+          <div class="metric-label">Total Tasks</div>
+          <div class="metric-value" id="total-tasks">-</div>
+        </div>
+        <div class="metric">
+          <div class="metric-label">Success Rate</div>
+          <div class="metric-value" id="success-rate">-</div>
+          <div class="progress-bar">
+            <div class="progress-fill" id="success-fill"></div>
+          </div>
+        </div>
+        <div class="metric">
+          <div class="metric-label">Avg Score</div>
+          <div class="metric-value" id="avg-score">-</div>
+          <div class="progress-bar">
+            <div class="progress-fill" id="score-fill"></div>
+          </div>
+        </div>
+      </div>
+      
+      <!-- Charts Section -->
+      <div class="charts-section" style="margin-top: 24px;">
+        <div class="label">// Performance Analytics</div>
+        <div class="charts-grid">
+          <div class="chart-container">
+            <canvas id="tasksChart"></canvas>
+          </div>
+          <div class="chart-container">
+            <canvas id="performanceChart"></canvas>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- History -->
+    <div class="card full">
+      <div class="label" style="display:flex;align-items:center;justify-content:space-between">
+        <span>// Task History</span>
+        <button class="btn-sm">↺ Refresh</button>
+      </div>
+      <div class="hlist" id="hlist"><div class="empty" style="padding:24px">No tasks yet</div></div>
+    </div>
+
+  </div>
+</div>
+
+<!-- Result Modal -->
+<div id="result-modal" class="modal">
+  <div class="modal-content">
+    <div class="modal-header">
+      <h2>Interactive Dashboard</h2>
+      <button class="modal-close" onclick="closeModal()">&times;</button>
+    </div>
+    <div class="modal-body" id="modal-body">
+      <!-- Dashboard content will be loaded here -->
+    </div>
+  </div>
+</div>
+
+<script src="./js/app.js"></script>
+</body>
+</html>
