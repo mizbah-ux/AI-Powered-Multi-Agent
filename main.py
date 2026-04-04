@@ -110,39 +110,55 @@ def generate_final_report(result, analysis):
     - No casual language
     """
 
-    return call_llm(system_prompt, f"""
+    try:
+        return call_llm(system_prompt, f"""
     Execution Data:
-    {result}
+    {result[:2000]}
 
     Analyst Notes:
-    {analysis}
+    {analysis[:1000]}
     """)
+    except Exception as e:
+        return f"📊 EXECUTIVE SUMMARY\n- Report generation encountered an issue\n\n🔍 KEY FINDINGS\n- Analysis completed with fallback\n\n📈 ANALYSIS\n- {str(e)[:200]}\n\n💡 STRATEGIC RECOMMENDATIONS\n- Review raw data and logs for details"
+
 
 def prepare_data_for_llm(file_data: dict) -> str:
-    df = pd.DataFrame(file_data['data'])
-    numeric_cols = df.select_dtypes(include=['number']).columns.tolist()
-    categorical_cols = df.select_dtypes(exclude=['number']).columns.tolist()
+    try:
+        df = pd.DataFrame(file_data['data'])
+        if df.empty:
+            return f"File: {file_data.get('filename', 'unknown')} | No data rows"
+        
+        numeric_cols = df.select_dtypes(include=['number']).columns.tolist()
+        categorical_cols = df.select_dtypes(exclude=['number']).columns.tolist()
 
-    numeric_summary = {}
-    for col in numeric_cols:
-        numeric_summary[col] = {
-            "min": round(df[col].min(), 2),
-            "max": round(df[col].max(), 2),
-            "mean": round(df[col].mean(), 2),
-            "median": round(df[col].median(), 2),
-            "std": round(df[col].std(), 2)
-        }
+        numeric_summary = {}
+        for col in numeric_cols:
+            try:
+                numeric_summary[col] = {
+                    "min": round(float(df[col].min()), 2),
+                    "max": round(float(df[col].max()), 2),
+                    "mean": round(float(df[col].mean()), 2),
+                    "median": round(float(df[col].median()), 2),
+                    "std": round(float(df[col].std()), 2)
+                }
+            except Exception as e:
+                numeric_summary[col] = {"error": str(e)}
 
-    categorical_summary = {}
-    for col in categorical_cols[:5]:
-        categorical_summary[col] = df[col].value_counts().head(5).to_dict()
+        categorical_summary = {}
+        for col in categorical_cols[:5]:
+            try:
+                categorical_summary[col] = df[col].value_counts().head(5).to_dict()
+            except Exception as e:
+                categorical_summary[col] = {"error": str(e)}
 
-    return f"""
-    File: {file_data['filename']} | Total rows: {len(df)}
-    Columns: {', '.join(file_data['columns'])}
+        return f"""
+    File: {file_data.get('filename', 'unknown')} | Total rows: {len(df)}
+    Columns: {', '.join(file_data.get('columns', []))}
     Numeric Summary: {json.dumps(numeric_summary)}
     Categorical Breakdown: {json.dumps(categorical_summary)}
     """
+    except Exception as e:
+        return f"File: {file_data.get('filename', 'unknown')} | Error preparing data: {str(e)}"
 
 
 def _run_pipeline(task_id: int, user_input: str, file_id: str = None):
@@ -180,11 +196,20 @@ def _run_pipeline(task_id: int, user_input: str, file_id: str = None):
                 
                 steps = planner.run(task_id, planner_input)
                 add_log(task_id, "SYS", f"Generated initial plan with {len(steps)} steps")
+                
+                # Fallback if planner returns empty steps
+                if not steps or len(steps) == 0:
+                    add_log(task_id, "SYS", "Warning: Planner returned no steps, using default plan")
+                    steps = ["Analyze the request", "Generate insights", "Create summary"]
             else:
                 add_log(task_id, "SYS", f"Plan rejected, refining...")
                 add_log(task_id, "SYS", f"Retry attempt {attempt}")
                 steps = refine_plan_with_feedback(steps, feedback)
                 add_log(task_id, "SYS", f"Improved plan generated with {len(steps)} steps")
+                
+                if not steps or len(steps) == 0:
+                    add_log(task_id, "SYS", "Warning: Refinement returned no steps, using default plan")
+                    steps = ["Analyze the request", "Generate insights", "Create summary"]
             
             approved, feedback = supervisor.approve_plan(task_id, steps)
             
@@ -246,7 +271,7 @@ def _run_pipeline(task_id: int, user_input: str, file_id: str = None):
             analysis = analyst.run(task_id, analyst_input, result)
 
             score_match = re.search(r"Score:\s*(\d+)", analysis)
-            score = int(score_match.group(1)) if score_match else 0
+            score = int(score_match.group(1)) if score_match else 7
 
             if score >= 8:
                 # Success - update learning if this was a retry
@@ -277,7 +302,11 @@ def _run_pipeline(task_id: int, user_input: str, file_id: str = None):
             
             execution_attempt += 1
 
-        final_report = generate_final_report(result, analysis)
+        try:
+            final_report = generate_final_report(result, analysis)
+        except Exception as e:
+            add_log(task_id, "SYS", f"Final report generation failed: {str(e)}")
+            final_report = f"Analysis completed. Raw result length: {len(result)} chars. Error: {str(e)[:100]}"
 
         add_memory(task_id, "FinalResult", final_report)
         add_memory(task_id, "Analysis", analysis)

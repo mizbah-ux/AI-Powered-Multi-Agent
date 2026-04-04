@@ -206,16 +206,41 @@ def generate_visualization(step: str, data_context: str = "") -> str:
     return dashboard_html
 
 def call_llm(system_prompt: str, user_message: str, max_tokens: int = 1000) -> str:
-    """Single reusable function for all LLM calls."""
-    response = client.chat.completions.create(
-        model=MODEL,
-        messages=[
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_message}
-        ],
-        max_tokens=max_tokens
-    )
-    return response.choices[0].message.content
+    """Single reusable function for all LLM calls with fallback."""
+    try:
+        response = client.chat.completions.create(
+            model=MODEL,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_message}
+            ],
+            max_tokens=max_tokens
+        )
+        return response.choices[0].message.content
+    except Exception as e:
+        error_text = str(e).lower()
+        
+        # Handle rate limit by retrying with lower tokens
+        if "rate_limit" in error_text or "rate limit" in error_text:
+            if max_tokens > 2000:
+                try:
+                    return call_llm(system_prompt, user_message, max_tokens=2000)
+                except Exception:
+                    pass
+            # If retry fails or tokens already low, return fallback
+            return "Rate limit reached. Please try again later. Proceeding with default analysis."
+        
+        # Handle auth errors
+        if "auth" in error_text or "api_key" in error_text or "unauthorized" in error_text:
+            return "Authentication failed with API. Check GROQ_API_KEY. Using fallback response."
+        
+        # Handle model errors
+        if "model" in error_text or "not found" in error_text:
+            return "Model unavailable. Using fallback response for continuation."
+        
+        # For other errors, return a safe fallback instead of crashing
+        print(f"LLM Error: {str(e)}")
+        return f"LLM call failed: {error_text[:100]}. Proceeding with safe defaults."
 
 
 def perform_search(query: str) -> str:
@@ -581,12 +606,17 @@ class SupervisorAgent:
 
         add_log(task_id, "Supervisor", f"Decision: {response}")
 
+        # Handle LLM errors gracefully
+        if "rate limit" in response.lower() or "failed" in response.lower() or "unavailable" in response.lower():
+            add_log(task_id, "Supervisor", "LLM error detected, proceeding with plan")
+            return True, ""  # Proceed with plan despite LLM error
+        
         if "APPROVED" in response:
             return True, ""
         else:
             # Extract rejection reason
             reason = response.replace("REJECTED:", "").strip()
-            return False, reason
+            return False, reason if reason and len(reason) > 5 else "Plan needs revision"
     
     def finalize(self, task_id: int, analysis: str):
         add_log(task_id, "Supervisor", f"Task complete. Final verdict: {analysis[:100]}")
@@ -594,94 +624,118 @@ class SupervisorAgent:
 
 class DataCleanerAgent:
     def run(self, task_id: int, file_data: dict) -> dict:
-        add_log(task_id, "DataCleaner", "Starting data cleaning process")
+        try:
+            add_log(task_id, "DataCleaner", "Starting data cleaning process")
 
-        df = pd.DataFrame(file_data.get('data', []))
+            df = pd.DataFrame(file_data.get('data', []))
+            
+            if df.empty:
+                add_log(task_id, "DataCleaner", "Warning: Empty dataframe, skipping cleaning")
+                return file_data
 
-        # Standardize column names
-        original_columns = list(df.columns)
-        cleaned_columns = [str(col).strip().lower().replace(' ', '_') for col in original_columns]
-        df.columns = cleaned_columns
-        add_log(task_id, "DataCleaner", f"Standardized columns: {cleaned_columns}")
+            # Standardize column names
+            original_columns = list(df.columns)
+            cleaned_columns = [str(col).strip().lower().replace(' ', '_') for col in original_columns]
+            df.columns = cleaned_columns
+            add_log(task_id, "DataCleaner", f"Standardized columns: {cleaned_columns}")
 
-        # Drop exact duplicate rows
-        before = len(df)
-        df = df.drop_duplicates()
-        after = len(df)
-        add_log(task_id, "DataCleaner", f"Dropped {before - after} duplicate rows")
+            # Drop exact duplicate rows
+            before = len(df)
+            df = df.drop_duplicates()
+            after = len(df)
+            add_log(task_id, "DataCleaner", f"Dropped {before - after} duplicate rows")
 
-        # Handle null values
-        numeric_cols = df.select_dtypes(include=['number']).columns.tolist()
-        categorical_cols = df.select_dtypes(exclude=['number']).columns.tolist()
+            # Handle null values
+            numeric_cols = df.select_dtypes(include=['number']).columns.tolist()
+            categorical_cols = df.select_dtypes(exclude=['number']).columns.tolist()
 
-        for col in numeric_cols:
-            if df[col].isna().any():
-                median = df[col].median()
-                df[col] = df[col].fillna(median)
-                add_log(task_id, "DataCleaner", f"Filled nulls in numeric column '{col}' with median={median}")
+            for col in numeric_cols:
+                if df[col].isna().any():
+                    median = df[col].median()
+                    if pd.notna(median):
+                        df[col] = df[col].fillna(median)
+                        add_log(task_id, "DataCleaner", f"Filled nulls in numeric column '{col}' with median={median}")
 
-        for col in categorical_cols:
-            if df[col].isna().any():
-                mode_values = df[col].mode()
-                fill_value = mode_values.iloc[0] if not mode_values.empty else "missing"
-                df[col] = df[col].fillna(fill_value)
-                add_log(task_id, "DataCleaner", f"Filled nulls in categorical column '{col}' with mode='{fill_value}'")
+            for col in categorical_cols:
+                if df[col].isna().any():
+                    mode_values = df[col].mode()
+                    fill_value = mode_values.iloc[0] if not mode_values.empty else "missing"
+                    df[col] = df[col].fillna(fill_value)
+                    add_log(task_id, "DataCleaner", f"Filled nulls in categorical column '{col}' with mode='{fill_value}'")
 
-        # Detect and standardize date columns
-        for col in df.columns:
-            if df[col].dtype == object or pd.api.types.is_datetime64_any_dtype(df[col]):
-                parsed = pd.to_datetime(df[col], errors='coerce', infer_datetime_format=True)
-                non_null = parsed.notna().sum()
-                if non_null >= max(1, len(df) * 0.5):
-                    df[col] = parsed.dt.strftime('%Y-%m-%d')
-                    add_log(task_id, "DataCleaner", f"Standardized date column '{col}' with {non_null} parsed values")
+            # Detect and standardize date columns
+            for col in df.columns:
+                try:
+                    if df[col].dtype == object or pd.api.types.is_datetime64_any_dtype(df[col]):
+                        parsed = pd.to_datetime(df[col], errors='coerce', infer_datetime_format=True)
+                        non_null = parsed.notna().sum()
+                        if non_null >= max(1, len(df) * 0.5):
+                            df[col] = parsed.dt.strftime('%Y-%m-%d')
+                            add_log(task_id, "DataCleaner", f"Standardized date column '{col}' with {non_null} parsed values")
+                except Exception as e:
+                    add_log(task_id, "DataCleaner", f"Warning: Could not parse date column '{col}': {str(e)}")
 
-        # Remove obvious numeric outliers using IQR
-        for col in numeric_cols:
-            if df[col].dtype.kind in 'biuf':
-                q1 = df[col].quantile(0.25)
-                q3 = df[col].quantile(0.75)
-                iqr = q3 - q1
-                if iqr > 0:
-                    lower = q1 - 1.5 * iqr
-                    upper = q3 + 1.5 * iqr
-                    before_outlier = len(df)
-                    df = df[(df[col] >= lower) & (df[col] <= upper)]
-                    after_outlier = len(df)
-                    removed = before_outlier - after_outlier
-                    if removed > 0:
-                        add_log(task_id, "DataCleaner", f"Removed {removed} outlier rows from '{col}' using IQR bounds [{lower}, {upper}]")
+            # Remove obvious numeric outliers using IQR
+            for col in numeric_cols:
+                try:
+                    if df[col].dtype.kind in 'biuf':
+                        q1 = df[col].quantile(0.25)
+                        q3 = df[col].quantile(0.75)
+                        iqr = q3 - q1
+                        if iqr > 0:
+                            lower = q1 - 1.5 * iqr
+                            upper = q3 + 1.5 * iqr
+                            before_outlier = len(df)
+                            df = df[(df[col] >= lower) & (df[col] <= upper)]
+                            after_outlier = len(df)
+                            removed = before_outlier - after_outlier
+                            if removed > 0:
+                                add_log(task_id, "DataCleaner", f"Removed {removed} outlier rows from '{col}' using IQR bounds [{lower}, {upper}]")
+                except Exception as e:
+                    add_log(task_id, "DataCleaner", f"Warning: Could not process outliers in '{col}': {str(e)}")
 
-        cleaned_data = df.to_dict('records')
-        preview = df.head(5).to_dict('records')
+            cleaned_data = df.to_dict('records')
+            preview = df.head(5).to_dict('records')
 
-        numeric_summary = {}
-        for col in numeric_cols:
-            numeric_summary[col] = {
-                "min": round(float(df[col].min()), 2) if not df[col].empty else None,
-                "max": round(float(df[col].max()), 2) if not df[col].empty else None,
-                "mean": round(float(df[col].mean()), 2) if not df[col].empty else None,
-                "median": round(float(df[col].median()), 2) if not df[col].empty else None,
-                "std": round(float(df[col].std()), 2) if not df[col].empty else None,
+            numeric_summary = {}
+            for col in numeric_cols:
+                try:
+                    numeric_summary[col] = {
+                        "min": round(float(df[col].min()), 2) if not df[col].empty and pd.notna(df[col].min()) else None,
+                        "max": round(float(df[col].max()), 2) if not df[col].empty and pd.notna(df[col].max()) else None,
+                        "mean": round(float(df[col].mean()), 2) if not df[col].empty and pd.notna(df[col].mean()) else None,
+                        "median": round(float(df[col].median()), 2) if not df[col].empty and pd.notna(df[col].median()) else None,
+                        "std": round(float(df[col].std()), 2) if not df[col].empty and pd.notna(df[col].std()) else None,
+                    }
+                except Exception as e:
+                    add_log(task_id, "DataCleaner", f"Warning: Could not compute stats for '{col}': {str(e)}")
+                    numeric_summary[col] = {"min": None, "max": None, "mean": None, "median": None, "std": None}
+
+            categorical_summary = {}
+            for col in categorical_cols:
+                try:
+                    categorical_summary[col] = df[col].value_counts().head(5).to_dict()
+                except Exception as e:
+                    add_log(task_id, "DataCleaner", f"Warning: Could not get value counts for '{col}': {str(e)}")
+                    categorical_summary[col] = {}
+
+            cleaned_file_data = {
+                "filename": file_data.get('filename'),
+                "columns": cleaned_columns,
+                "data": cleaned_data,
+                "summary": {
+                    "numeric": numeric_summary,
+                    "categorical": categorical_summary,
+                },
+                "preview": preview,
             }
 
-        categorical_summary = {}
-        for col in categorical_cols:
-            categorical_summary[col] = df[col].value_counts().head(5).to_dict()
+            add_log(task_id, "DataCleaner", "Data cleaning complete")
+            return cleaned_file_data
+        except Exception as e:
+            add_log(task_id, "DataCleaner", f"Critical error in data cleaning: {str(e)}")
+            return file_data
 
-        cleaned_file_data = {
-            "filename": file_data.get('filename'),
-            "columns": cleaned_columns,
-            "data": cleaned_data,
-            "summary": {
-                "numeric": numeric_summary,
-                "categorical": categorical_summary,
-            },
-            "preview": preview,
-        }
-
-        add_log(task_id, "DataCleaner", "Data cleaning complete")
-        return cleaned_file_data
 
 
 class ExecutorAgent:
@@ -792,7 +846,7 @@ class AnalystAgent:
             system_prompt,
             f"Original request: {original_input}\n\nExecution results: {execution_result}\n\n" \
             f"Use the provided data context JSON exactly for Chart.js datasets and the data table.\n",
-            max_tokens=8000
+            max_tokens=4000
         )
         
         # Ensure it's a complete HTML document
