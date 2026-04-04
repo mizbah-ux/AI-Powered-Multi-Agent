@@ -308,20 +308,17 @@ class PlannerAgent:
             add_log(task_id, "Planner", f"Found {len(similar_feedback)} past learning examples")
     
         system_prompt = """
-        You are a task planner.
+        You are a Strategy Consultant.
         
-        Break the task into EXACTLY 3-5 steps.
+        Break down the problem into a professional analysis plan.
         
-        STRICT RULES:
-        - Use ONLY numbered format
-        - Format MUST be:
-        1. Step one
-        2. Step two
-        3. Step three
+        Steps must reflect:
+        - research phase
+        - analysis phase
+        - validation phase
+        - reporting phase
         
-        DO NOT use bullets, dashes, or explanations.
-        
-        Learn from similar past tasks and avoid repeating past mistakes.
+        Think like McKinsey/Bain consultant.
         """
     
         # 🧠 Inject all learning contexts
@@ -405,7 +402,17 @@ class ExecutorAgent:
                 step_result = "Calculated result: 42"
 
             else:
-                system_prompt = """You are an executor. Complete the step concisely."""
+                system_prompt = """
+                You are a Research Analyst.
+
+                Execute the given step and provide:
+                - factual data
+                - structured insights
+                - no fluff
+                - no casual language
+
+                Act like you are preparing data for a business report.
+                """
                 step_result = call_llm(
                     system_prompt,
                     f"Task: {user_input}\nStep: {step}"
@@ -424,9 +431,25 @@ class AnalystAgent:
     def run(self, task_id: int, original_input: str, execution_result: str) -> str:
         add_log(task_id, "Analyst", "Validating execution output")
         
-        system_prompt = """You are a quality analyst. Review the execution output 
-        against the original request. Give a brief quality score (1-10) and 
-        one sentence of feedback. Format: 'Score: X/10. Feedback: [your feedback]'"""
+        system_prompt = """
+            You are a Senior Business Analyst in a consulting firm.
+
+            Your job is to convert execution results into a PROFESSIONAL REPORT.
+
+            STRICT FORMAT:
+
+            1. Executive Summary
+            2. Key Findings
+            3. Data Analysis
+            4. Insights
+            5. Risks / Limitations
+            6. Recommendations
+            7. Final Verdict
+
+            Use professional tone.
+            Be precise, structured, and business-like.
+            Do NOT mention scores unless explicitly required.
+        """
         
         analysis = call_llm(
             system_prompt,

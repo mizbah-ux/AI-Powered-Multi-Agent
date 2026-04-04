@@ -205,6 +205,7 @@ const API = 'http://localhost:8000';
 let seenLogs = new Set();
 let activeChips = new Set();
 let pollTimer = null;
+let isTaskRunning = false; // Flag to prevent UI interruption during task execution
 
 // ── char counter ──────────────────────────────────────────────
 const taskInput = document.getElementById('task-input');
@@ -243,6 +244,7 @@ async function submitTask() {
   if (!text) { taskInput.focus(); return; }
 
   resetUI();
+  isTaskRunning = true; // Set flag to prevent UI interruption
   const btn = document.getElementById('submit-btn');
   btn.disabled = true;
   btn.innerHTML = '<span class="spinner"></span>Running...';
@@ -272,6 +274,8 @@ async function submitTask() {
     // ── Step 2: Poll logs + status until completed ──────────────────
     await pollUntilDone(taskId);
 
+    // Only refresh history and analytics after task completes
+    isTaskRunning = false; // Clear flag before refreshing
     loadHistory();
 
   } catch (err) {
@@ -282,6 +286,7 @@ async function submitTask() {
     document.getElementById('pbar').style.width = '100%';
     btn.disabled = false;
     btn.innerHTML = 'Run Pipeline →';
+    isTaskRunning = false; // Clear flag when task completes
   }
 }
 
@@ -456,6 +461,12 @@ function activateChip(name) {
 
 // ── HISTORY ───────────────────────────────────────────────────
 async function loadHistory() {
+  // Skip refresh during active task execution to prevent UI interference
+  if (isTaskRunning) {
+    dbg('Skipping history refresh while task is running', 'info');
+    return;
+  }
+  
   try {
     const r = await fetch(API + '/tasks');
     const d = await r.json();
@@ -477,6 +488,12 @@ async function loadHistory() {
 }
 
 async function viewLogs(taskId) {
+  // Prevent interruption during active task execution
+  if (isTaskRunning) {
+    dbg('Cannot view logs while task is running', 'err');
+    return;
+  }
+  
   // Only clear logs and chips, not the results
   if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
   seenLogs.clear();
@@ -529,6 +546,12 @@ function esc(s) {
 
 // ── ANALYTICS ───────────────────────────────────────────────
 async function loadAnalytics() {
+  // Skip refresh during active task execution to prevent UI interference
+  if (isTaskRunning) {
+    dbg('Skipping analytics refresh while task is running', 'info');
+    return;
+  }
+  
   try {
     const response = await fetch(API + '/analytics');
     const data = await response.json();

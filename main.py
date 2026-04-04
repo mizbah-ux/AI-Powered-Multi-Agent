@@ -62,7 +62,33 @@ def get_task_status(task_id: int):
                 response["reason"] = task_results[task_id].get("reason", "")
             return response
     return {"task_id": task_id, "status": "not_found"}
+def generate_final_report(result, analysis):
+    from agents import call_llm
 
+    system_prompt = """
+    You are a Senior Business Consultant.
+
+    Convert the given execution data into a PROFESSIONAL REPORT.
+
+    FORMAT:
+    1. Executive Summary
+    2. Key Findings
+    3. Data Analysis
+    4. Insights
+    5. Risks / Limitations
+    6. Recommendations
+    7. Conclusion
+
+    Use clear, structured, business language.
+    """
+
+    return call_llm(system_prompt, f"""
+    Execution Data:
+    {result}
+
+    Analyst Notes:
+    {analysis}
+    """)
 
 def _run_pipeline(task_id: int, user_input: str):
     update_task_status(task_id, "running")
@@ -147,7 +173,9 @@ def _run_pipeline(task_id: int, user_input: str):
             
             execution_attempt += 1
 
-        add_memory(task_id, "FinalResult", result)
+        final_report = generate_final_report(result, analysis)
+
+        add_memory(task_id, "FinalResult", final_report)
         add_memory(task_id, "Analysis", analysis)
 
         supervisor.finalize(task_id, analysis)
@@ -155,7 +183,7 @@ def _run_pipeline(task_id: int, user_input: str):
         add_log(task_id, "SYS", f"Pipeline complete. Result length: {len(result)}")
 
         # Store result so /task/{id}/status can return it
-        task_results[task_id] = {"result": result, "analysis": analysis}
+        task_results[task_id] = {"result": final_report, "analysis": analysis}
 
         # 🧠 Store in global memory if score >= 8
         if score >= 8:
